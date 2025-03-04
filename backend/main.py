@@ -17,7 +17,7 @@ app.add_middleware(
 )
 
 # Load the custom dataset
-csv_path = os.path.join(os.path.dirname(__file__), "data/custom_vehicle_data.csv")
+csv_path = os.path.join(os.path.dirname(__file__), "data/driving_sim_upt.csv")
 df = pd.read_csv(csv_path)
 
 # Create an iterator to loop through the dataset continuously
@@ -31,7 +31,7 @@ class OBDData(BaseModel):
     engine_temp: float
     throttle: float
     fault_code: str
-
+    gear: int  # Include gear in data model
 
 @app.get("/api/real-time-obd-data")
 def get_real_time_obd_data():
@@ -50,6 +50,7 @@ def get_real_time_obd_data():
         return {
             "speed": data["speed"],
             "rpm": data["rpm"],
+            "gear": int(data["gear"]),  # Ensure gear is sent
             "fuel_efficiency": data["fuel_efficiency"],
             "engine_temp": data["engine_temp"],
             "throttle": data["throttle"],
@@ -67,5 +68,4 @@ def get_efficiency_score(data: OBDData):
         return {"error": "Speed cannot be zero for efficiency calculation."}
     
     score = (data.fuel_efficiency / data.speed) * 100
-    return {"efficiency_score": round(score, 2)}
-
+    return {"efficiency_score": round(min(score, 100), 2)}

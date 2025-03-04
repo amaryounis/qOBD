@@ -3,6 +3,7 @@
     <h2>Simulated OBD-II Data</h2>
     <p>Speed: {{ formatNumber(obdData.speed) }} km/h</p>
     <p>RPM: {{ formatNumber(obdData.rpm) }}</p>
+    <p>Gear: <span class="gear-indicator">{{ formatGear(obdData.gear, obdData.speed) }}</span></p>
     <p>Fuel Efficiency: {{ formatNumber(obdData.fuel_efficiency) }} km/L</p>
     <p>Engine Temperature: {{ formatNumber(obdData.engine_temp) }} °C</p>
     <p>Throttle: {{ formatNumber(obdData.throttle) }}%</p>
@@ -36,6 +37,12 @@ const formatNumber = (num) => {
   return num ? parseFloat(num).toFixed(2) : "0.00";
 };
 
+// Function to format gear display (Neutral when speed = 0)
+const formatGear = (gear, speed) => {
+  if (speed === 0) return "N"; // Show "N" for Neutral if car is stopped
+  return gear ? gear.toString() : "N";
+};
+
 const fetchOBDData = async () => {
   try {
     const response = await fetch("http://localhost:8000/api/real-time-obd-data");
@@ -64,7 +71,8 @@ const calculateEfficiency = async () => {
         fuel_efficiency: obdData.value.fuel_efficiency || 0,
         engine_temp: obdData.value.engine_temp || 0,
         throttle: obdData.value.throttle || 0,
-        fault_code: obdData.value.fault_code || "None"
+        fault_code: obdData.value.fault_code || "None",
+        gear: obdData.value.gear || "N"
       }),
     });
 
@@ -86,8 +94,8 @@ const calculateEfficiency = async () => {
 onMounted(() => {
   fetchOBDData(); // Initial fetch
   calculateEfficiency(); // Initial efficiency calc
-  obdFetchInterval = setInterval(fetchOBDData, 1000);
-  efficiencyFetchInterval = setInterval(calculateEfficiency, 1000);
+  obdFetchInterval = setInterval(fetchOBDData, 100);
+  efficiencyFetchInterval = setInterval(calculateEfficiency, 100);
 });
 
 // Clear intervals when the component is unmounted
@@ -106,5 +114,11 @@ onBeforeUnmount(() => {
 
 .error {
   color: red;
+}
+
+.gear-indicator {
+  font-weight: bold;
+  color: yellow;
+  font-size: 18px;
 }
 </style>
