@@ -1,85 +1,86 @@
 <template>
     <div>
-        <canvas ref="chartCanvas"></canvas>
+      <canvas ref="chartCanvas"></canvas>
     </div>
-</template>
-
-<script setup>
-import { ref, onMounted, watch } from "vue";
-import { Chart } from "chart.js/auto";
-import ChartDataLabels from "chartjs-plugin-datalabels"; // Ensure plugin is imported
-
-const props = defineProps({
+  </template>
+  
+  <script setup>
+  import { ref, onMounted, watch } from "vue";
+  import { Chart } from "chart.js/auto";
+  import ChartDataLabels from "chartjs-plugin-datalabels";
+  
+  const props = defineProps({
     speed: {
-        type: Number,
-        required: true,
+      type: Number,
+      required: true,
     },
-});
-
-const chartCanvas = ref(null);
-let chartInstance = null;
-
-const updateChart = () => {
+  });
+  
+  const chartCanvas = ref(null);
+  let chartInstance = null;
+  
+  const updateChart = () => {
     if (!chartCanvas.value) return;
-
+  
     const ctx = chartCanvas.value.getContext("2d");
-
-    if (chartInstance) {
-        chartInstance.destroy();
-    }
-
-    chartInstance = new Chart(ctx, {
+  
+    if (!chartInstance) {
+      chartInstance = new Chart(ctx, {
         type: "bar",
         data: {
-            labels: ["Speed (km/h)"],
-            datasets: [
-                {
-                    label: "Speed",
-                    data: [props.speed || 0], // Prevent undefined error
-                    backgroundColor: "red",
-                },
-            ],
+          labels: ["Speed (km/h)"],
+          datasets: [
+            {
+              label: "Speed",
+              data: [props.speed || 0],
+              backgroundColor: "red",
+            },
+          ],
         },
         options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    min: 0,
-                    max: 200, // Max speed limit
-                    ticks: {
-                        stepSize: 50,
-                        color: "white", // Ensure readability
-                    },
-                },
-                x: {
-                    ticks: {
-                        color: "white", // Ensure readability
-                    },
-                },
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              min: 0,
+              max: 200,
+              ticks: {
+                stepSize: 50,
+                color: "white",
+              },
             },
-            plugins: {
-                legend: { display: false },
-                datalabels: {
-                    color: "white",
-                    font: { size: 20, weight: "bold" },
-                    formatter: (value) => value.toFixed(2), // Show proper decimal places
-                    anchor: "center",
-                    align: "center",
-                },
+            x: {
+              ticks: {
+                color: "white",
+              },
             },
+          },
+          plugins: {
+            legend: { display: false },
+            datalabels: {
+              color: "white",
+              font: { size: 20, weight: "bold" },
+              formatter: (value) => value.toFixed(2),
+              anchor: "center",
+              align: "center",
+            },
+          },
         },
-        plugins: [ChartDataLabels], // Enable plugin
-    });
-};
-
-watch(() => props.speed, updateChart);
-onMounted(updateChart);
-</script>
-
-<style scoped>
-canvas {
+        plugins: [ChartDataLabels],
+      });
+    } else {
+      chartInstance.data.datasets[0].data = [props.speed || 0];
+      chartInstance.update();
+    }
+  };
+  
+  watch(() => props.speed, updateChart);
+  onMounted(updateChart);
+  </script>
+  
+  <style scoped>
+  canvas {
     max-width: 400px;
     margin-top: 20px;
-}
-</style>
+  }
+  </style>
