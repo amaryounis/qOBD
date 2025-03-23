@@ -1,10 +1,10 @@
 <template>
-  <div class="rpm-gauge-container">
+  <div class="speed-gauge-container">
     <UniversalGauge 
-      :value="rpm" 
-      :maxValue="8000" 
-      type="rpm" 
-      :decimals="0"
+      :value="speed" 
+      :maxValue="200" 
+      type="speed" 
+      :decimals="1"
     />
   </div>
 </template>
@@ -14,7 +14,7 @@ import { ref, onMounted } from "vue";
 import UniversalGauge from "./UniversalGauge.vue";
 
 const props = defineProps({
-  rpm: {
+  speed: {
     type: Number,
     required: true,
     default: 0
@@ -23,7 +23,7 @@ const props = defineProps({
 </script>
 
 <style scoped>
-.rpm-gauge-container {
+.speed-gauge-container {
   width: 100%;
   height: 100%;
 }
