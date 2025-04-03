@@ -1,12 +1,24 @@
 <template>
   <div :data-theme="theme" class="min-h-screen bg-base-200 w-full" :class="{ 'high-contrast': highContrastMode }">
-    <!-- Navbar - make it less prominent -->
-    <div class="navbar bg-base-300 shadow-lg h-12">
-      <div class="flex-1">
-        <a class="btn btn-ghost normal-case text-xl">qOBD Dashboard</a>
+    <!-- Navbar with integrated tabs -->
+    <div class="navbar bg-base-300 shadow-lg h-16 px-4 flex justify-between">
+      <a class="btn btn-ghost normal-case text-xl">qOBD Dashboard</a>
+      
+      <!-- Tab Navigation -->
+      <div class="tabs tabs-boxed bg-base-300 z-10">
+        <a 
+          @click="currentSlide = 0" 
+          :class="{'tab-active': currentSlide === 0, 'tab': true}"
+        >Main Dashboard</a>
+        <a 
+          @click="currentSlide = 1" 
+          :class="{'tab-active': currentSlide === 1, 'tab': true}"
+        >Details</a>
       </div>
-      <div class="flex-none">
-        <div class="dropdown dropdown-end">
+      
+      <div class="flex items-center">
+        <!-- Notifications -->
+        <div class="dropdown dropdown-end mr-2">
           <label tabindex="0" class="btn btn-ghost btn-circle">
             <div class="indicator">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -27,6 +39,8 @@
             </div>
           </div>
         </div>
+        
+        <!-- User/Settings Menu -->
         <div class="dropdown dropdown-end">
           <label tabindex="0" class="btn btn-ghost btn-circle avatar">
             <div class="w-10 rounded-full bg-primary text-primary-content flex items-center justify-center">
@@ -41,353 +55,355 @@
       </div>
     </div>
 
-    <!-- Main Content with Tab Navigation -->
-    <div class="w-full relative">
-      <!-- Tab Navigation -->
-      <div class="tabs tabs-boxed bg-base-300 justify-center sticky top-0 z-10">
-        <a 
-          @click="currentSlide = 0" 
-          :class="{'tab-active': currentSlide === 0, 'tab': true}"
-        >Main Dashboard</a>
-        <a 
-          @click="currentSlide = 1" 
-          :class="{'tab-active': currentSlide === 1, 'tab': true}"
-        >Details</a>
-      </div>
+    <!-- Content Container -->
+    <div class="container mx-auto p-0">
+      <!-- Main Dashboard (Slide 1) -->
+      <div v-if="currentSlide === 0" class="slide-container px-4 py-4">
+        <div v-if="!isSlide1Empty">
+          <!-- Primary Gauges -->
+          <div v-if="showRPMGauge || showSpeedChart" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <!-- RPM Gauge -->
+            <div v-if="showRPMGauge" class="card bg-base-100 shadow-xl">
+              <div class="card-body p-4">
+                <h2 class="card-title text-center w-full">RPM Gauge</h2>
+                <div class="flex justify-center h-64">
+                  <RPMGauge :rpm="obdData.rpm" />
+                </div>
+              </div>
+            </div>
+            
+            <!-- Speed Gauge -->
+            <div v-if="showSpeedChart" class="card bg-base-100 shadow-xl">
+              <div class="card-body p-4">
+                <h2 class="card-title text-center w-full">Speed Gauge</h2>
+                <div class="flex justify-center h-64">
+                  <SpeedGauge :speed="obdData.speed" />
+                </div>
+              </div>
+            </div>
+          </div>
 
-      <!-- Content Container -->
-      <div class="w-full">
-        <!-- Slide 1: Main Dashboard -->
-        <SlideTransition transitionName="fade">
-          <div v-show="currentSlide === 0" class="p-4 overflow-y-auto min-h-[calc(100vh-6rem)]">
-            <div class="container mx-auto">
-              <!-- Primary Gauges (Always shown on main slide) -->
-              <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-                <div class="card bg-base-100 shadow-xl">
-                  <div class="card-body p-4">
-                    <h2 class="card-title text-center w-full">RPM Gauge</h2>
-                    <div class="flex justify-center h-64">
-                      <RPMGauge :rpm="obdData.rpm" />
-                    </div>
+          <!-- Stats Cards -->
+          <div v-if="displayInSlide(0, 'statsCards')" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div class="stats shadow bg-base-100">
+              <div class="stat">
+                <div class="stat-title">Speed</div>
+                <div class="stat-value">{{ formatNumber(obdData.speed, 1) }} km/h</div>
+                <div class="stat-desc">Current Vehicle Speed</div>
+              </div>
+            </div>
+
+            <div class="stats shadow bg-base-100">
+              <div class="stat">
+                <div class="stat-title">Engine RPM</div>
+                <div class="stat-value">{{ formatNumber(obdData.rpm, 0) }}</div>
+                <div class="stat-desc">
+                  <div class="badge" :class="getRPMBadgeClass(obdData.rpm)">
+                    {{ getRPMStatus(obdData.rpm) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="stats shadow bg-base-100">
+              <div class="stat">
+                <div class="stat-title">Gear Position</div>
+                <div class="stat-value text-secondary">{{ formatGear(obdData.gear, obdData.speed) }}</div>
+                <div class="stat-desc">Fuel Efficiency: {{ formatNumber(obdData.fuel_efficiency, 2) }} km/L</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Engine & Diagnostic Status Row -->
+          <div v-if="displayInSlide(0, 'engineStatus') || displayInSlide(0, 'diagnosticStatus')" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+            <!-- Engine Status -->
+            <div v-if="displayInSlide(0, 'engineStatus')" class="card bg-base-100 shadow-xl">
+              <div class="card-body p-4">
+                <h2 class="card-title">Engine Status</h2>
+                <div class="overflow-x-auto">
+                  <table class="table table-zebra w-full">
+                    <tbody>
+                      <tr>
+                        <td>Temperature</td>
+                        <td>
+                          <div class="flex items-center gap-2">
+                            {{ formatNumber(obdData.engine_temp, 1) }} °C
+                            <span class="badge" :class="getTempBadgeClass(obdData.engine_temp)">
+                              {{ getTempStatus(obdData.engine_temp) }}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>Throttle Position</td>
+                        <td>
+                          <div class="flex items-center gap-2">
+                            <progress 
+                              class="progress progress-primary w-full" 
+                              :value="obdData.throttle" 
+                              max="100"
+                            ></progress>
+                            <span>{{ formatNumber(obdData.throttle, 1) }}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <!-- Diagnostic Status -->
+            <div v-if="displayInSlide(0, 'diagnosticStatus')" class="card bg-base-100 shadow-xl">
+              <div class="card-body p-4">
+                <h2 class="card-title">
+                  Diagnostic Status
+                  <div v-if="hasFaultCode" class="badge badge-error gap-2">
+                    Error
+                  </div>
+                  <div v-else class="badge badge-success gap-2">
+                    Normal
+                  </div>
+                </h2>
+                
+                <div v-if="hasFaultCode" class="alert alert-error">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <div class="font-bold">Fault Code: {{ obdData.fault_code }}</div>
+                    <div class="text-xs">{{ getFaultDescription(obdData.fault_code) }}</div>
                   </div>
                 </div>
                 
-                <div class="card bg-base-100 shadow-xl">
-                  <div class="card-body p-4">
-                    <h2 class="card-title text-center w-full">Speed Gauge</h2>
-                    <div class="flex justify-center h-64">
-                      <SpeedGauge :speed="obdData.speed" />
-                    </div>
-                  </div>
+                <div v-else class="alert alert-success">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>No fault codes detected</span>
                 </div>
               </div>
+            </div>
+          </div>
 
-              <!-- Customizable components for Slide 1 -->
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4" v-if="displayInSlide(0, 'statsCards')">
-                <!-- Speed, RPM, and Gear Stats Cards -->
-                <div class="stats shadow bg-base-100">
-                  <div class="stat">
-                    <div class="stat-title">Speed</div>
-                    <div class="stat-value">{{ formatNumber(obdData.speed, 1) }} km/h</div>
-                    <div class="stat-desc">Current Vehicle Speed</div>
+          <!-- Efficiency Score -->
+          <div v-if="displayInSlide(0, 'efficiencyScore') && efficiencyScore !== null" class="mb-4">
+            <div class="card bg-base-100 shadow-xl">
+              <div class="card-body p-4">
+                <h2 class="card-title">Driver Efficiency Score</h2>
+                <div class="flex flex-col md:flex-row gap-4 items-center">
+                  <div class="radial-progress text-accent" :style="`--value:${efficiencyScore}; --size:8rem;`">
+                    {{ formatNumber(efficiencyScore, 1) }}%
                   </div>
-                </div>
-
-                <div class="stats shadow bg-base-100">
-                  <div class="stat">
-                    <div class="stat-title">Engine RPM</div>
-                    <div class="stat-value">{{ formatNumber(obdData.rpm, 0) }}</div>
-                    <div class="stat-desc">
-                      <div class="badge" :class="getRPMBadgeClass(obdData.rpm)">
-                        {{ getRPMStatus(obdData.rpm) }}
+                  <div class="flex-1">
+                    <h3 class="text-xl font-bold">{{ getEfficiencyRating(efficiencyScore) }}</h3>
+                    <div class="mt-2">
+                      <div class="alert" :class="getEfficiencyAlertClass(efficiencyScore)">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span>{{ getEfficiencyTip(efficiencyScore, obdData) }}</span>
                       </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="stats shadow bg-base-100">
-                  <div class="stat">
-                    <div class="stat-title">Gear Position</div>
-                    <div class="stat-value text-secondary">{{ formatGear(obdData.gear, obdData.speed) }}</div>
-                    <div class="stat-desc">Fuel Efficiency: {{ formatNumber(obdData.fuel_efficiency, 2) }} km/L</div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Engine Status Card -->
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" v-if="displayInSlide(0, 'engineStatus')">
-                <div class="card bg-base-100 shadow-xl">
-                  <div class="card-body p-4">
-                    <h2 class="card-title">Engine Status</h2>
-                    <div class="overflow-x-auto">
-                      <table class="table table-zebra w-full">
-                        <tbody>
-                          <tr>
-                            <td>Temperature</td>
-                            <td>
-                              <div class="flex items-center gap-2">
-                                {{ formatNumber(obdData.engine_temp, 1) }} °C
-                                <span class="badge" :class="getTempBadgeClass(obdData.engine_temp)">
-                                  {{ getTempStatus(obdData.engine_temp) }}
-                                </span>
-                              </div>
-                            </td>
-                          </tr>
-                          <tr>
-                            <td>Throttle Position</td>
-                            <td>
-                              <div class="flex items-center gap-2">
-                                <progress 
-                                  class="progress progress-primary w-full" 
-                                  :value="obdData.throttle" 
-                                  max="100"
-                                ></progress>
-                                <span>{{ formatNumber(obdData.throttle, 1) }}%</span>
-                              </div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Diagnostic Status Card -->
-                <div class="card bg-base-100 shadow-xl" v-if="displayInSlide(0, 'diagnosticStatus')">
-                  <div class="card-body p-4">
-                    <h2 class="card-title">
-                      Diagnostic Status
-                      <div v-if="hasFaultCode" class="badge badge-error gap-2">
-                        Error
-                      </div>
-                      <div v-else class="badge badge-success gap-2">
-                        Normal
-                      </div>
-                    </h2>
-                    
-                    <div v-if="hasFaultCode" class="alert alert-error">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <div>
-                        <div class="font-bold">Fault Code: {{ obdData.fault_code }}</div>
-                        <div class="text-xs">{{ getFaultDescription(obdData.fault_code) }}</div>
-                      </div>
-                    </div>
-                    
-                    <div v-else class="alert alert-success">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span>No fault codes detected</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Efficiency Score on Slide 1 (if configured) -->
-              <div v-if="displayInSlide(0, 'efficiencyScore') && efficiencyScore !== null" class="mb-4">
-                <div class="card bg-base-100 shadow-xl">
-                  <div class="card-body p-4">
-                    <h2 class="card-title">Driver Efficiency Score</h2>
-                    <div class="flex flex-col md:flex-row gap-4 items-center">
-                      <div class="radial-progress text-accent" :style="`--value:${efficiencyScore}; --size:8rem;`">
-                        {{ formatNumber(efficiencyScore, 1) }}%
-                      </div>
-                      <div class="flex-1">
-                        <h3 class="text-xl font-bold">{{ getEfficiencyRating(efficiencyScore) }}</h3>
-                        <div class="mt-2">
-                          <div class="alert" :class="getEfficiencyAlertClass(efficiencyScore)">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <span>{{ getEfficiencyTip(efficiencyScore, obdData) }}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Efficiency Chart on Slide 1 (if configured) -->
-              <div v-if="displayInSlide(0, 'efficiencyChart') && showEfficiencyChart && efficiencyScore !== null" class="mb-4">
-                <div class="card bg-base-100 shadow-xl">
-                  <div class="card-body p-4">
-                    <h2 class="card-title">Efficiency Chart</h2>
-                    <div class="flex justify-center">
-                      <EfficiencyChart :efficiency="efficiencyScore" />
                     </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </SlideTransition>
 
-        <!-- Slide 2: Additional Information -->
-        <SlideTransition transitionName="fade">
-          <div v-show="currentSlide === 1" class="p-4 overflow-y-auto min-h-[calc(100vh-6rem)]">
-            <div class="container mx-auto">
-              <!-- Trip Information Component -->
-              <div class="mb-4">
-                <TripInfoComponent :tripData="tripData" />
-              </div>
-              
-              <!-- Driving Behavior Analysis Component -->
-              <div class="mb-4">
-                <DrivingBehaviorComponent :drivingData="drivingData" />
-              </div>
-              
-              <!-- Predictive Model Component -->
-              <div class="mb-4">
-                <PredictiveModel :obdData="obdData" :tripData="tripData" />
-              </div>
-              
-              <!-- Efficiency Score - if configured for Slide 2 -->
-              <div v-if="displayInSlide(1, 'efficiencyScore') && efficiencyScore !== null" class="mb-4">
-                <div class="card bg-base-100 shadow-xl">
-                  <div class="card-body p-4">
-                    <h2 class="card-title">Driver Efficiency Score</h2>
-                    <div class="flex flex-col md:flex-row gap-4 items-center">
-                      <div class="radial-progress text-accent" :style="`--value:${efficiencyScore}; --size:8rem;`">
-                        {{ formatNumber(efficiencyScore, 1) }}%
-                      </div>
-                      <div class="flex-1">
-                        <h3 class="text-xl font-bold">{{ getEfficiencyRating(efficiencyScore) }}</h3>
-                        <div class="mt-2">
-                          <div class="alert" :class="getEfficiencyAlertClass(efficiencyScore)">
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6">
-                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                            </svg>
-                            <span>{{ getEfficiencyTip(efficiencyScore, obdData) }}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+          <!-- Efficiency Chart -->
+          <div v-if="displayInSlide(0, 'efficiencyChart') && showEfficiencyChart && efficiencyScore !== null" class="mb-4">
+            <div class="card bg-base-100 shadow-xl">
+              <div class="card-body p-4">
+                <h2 class="card-title">Efficiency Chart</h2>
+                <div class="flex justify-center">
+                  <EfficiencyChart :efficiency="efficiencyScore" />
                 </div>
               </div>
-
-              <!-- Efficiency Chart - if configured for Slide 2 -->
-              <div v-if="displayInSlide(1, 'efficiencyChart') && showEfficiencyChart && efficiencyScore !== null" class="mb-4">
-                <div class="card bg-base-100 shadow-xl">
-                  <div class="card-body p-4">
-                    <h2 class="card-title">Efficiency Chart</h2>
-                    <div class="flex justify-center">
-                      <EfficiencyChart :efficiency="efficiencyScore" />
-                    </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Empty State for Slide 1 -->
+        <div v-if="isSlide1Empty" class="flex flex-col items-center justify-center py-16 text-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content opacity-50 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+          </svg>
+          <h3 class="text-xl font-bold mb-2">No Components Enabled</h3>
+          <p class="text-base-content opacity-70 mb-4">Use the settings menu to enable components for this view.</p>
+          <button @click="openSettings = true" class="btn btn-primary">Open Settings</button>
+        </div>
+      </div>
+      
+      <!-- Details (Slide 2) -->
+      <div v-if="currentSlide === 1" class="slide-container px-4 py-4">
+        <div v-if="hasDetailsComponents">
+          <!-- Trip Information -->
+          <div class="mb-4">
+            <TripInfoComponent :tripData="tripData" />
+          </div>
+          
+          <!-- Driving Behavior Analysis -->
+          <div class="mb-4">
+            <DrivingBehaviorComponent :drivingData="drivingData" />
+          </div>
+          
+          <!-- Predictive Model -->
+          <div class="mb-4">
+            <PredictiveModel :obdData="obdData" :tripData="tripData" />
+          </div>
+          
+          <!-- Efficiency Score -->
+          <div v-if="displayInSlide(1, 'efficiencyScore') && efficiencyScore !== null" class="mb-4">
+            <div class="card bg-base-100 shadow-xl">
+              <div class="card-body p-4">
+                <h2 class="card-title">Driver Efficiency Score</h2>
+                <div class="flex flex-col md:flex-row gap-4 items-center">
+                  <div class="radial-progress text-accent" :style="`--value:${efficiencyScore}; --size:8rem;`">
+                    {{ formatNumber(efficiencyScore, 1) }}%
                   </div>
-                </div>
-              </div>
-
-              <!-- Engine Status - if configured for Slide 2 -->
-              <div v-if="displayInSlide(1, 'engineStatus')" class="mb-4">
-                <div class="card bg-base-100 shadow-xl">
-                  <div class="card-body p-4">
-                    <h2 class="card-title">Engine Status</h2>
-                    <div class="overflow-x-auto">
-                      <table class="table table-zebra w-full">
-                        <tbody>
-                          <tr>
-                            <td>Temperature</td>
-                            <td>
-                              <div class="flex items-center gap-2">
-                                {{ formatNumber(obdData.engine_temp, 1) }} °C
-                                <span class="badge" :class="getTempBadgeClass(obdData.engine_temp)">
-                                  {{ getTempStatus(obdData.engine_temp) }}
-                                </span>
-                              </div>
-                            </td>
-                          </tr>
-                          <tr>
-                            <td>Throttle Position</td>
-                            <td>
-                              <div class="flex items-center gap-2">
-                                <progress 
-                                  class="progress progress-primary w-full" 
-                                  :value="obdData.throttle" 
-                                  max="100"
-                                ></progress>
-                                <span>{{ formatNumber(obdData.throttle, 1) }}%</span>
-                              </div>
-                            </td>
-                          </tr>
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Diagnostic Status - if configured for Slide 2 -->
-              <div v-if="displayInSlide(1, 'diagnosticStatus')" class="mb-4">
-                <div class="card bg-base-100 shadow-xl">
-                  <div class="card-body p-4">
-                    <h2 class="card-title">
-                      Diagnostic Status
-                      <div v-if="hasFaultCode" class="badge badge-error gap-2">
-                        Error
-                      </div>
-                      <div v-else class="badge badge-success gap-2">
-                        Normal
-                      </div>
-                    </h2>
-                    
-                    <div v-if="hasFaultCode" class="alert alert-error">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <div>
-                        <div class="font-bold">Fault Code: {{ obdData.fault_code }}</div>
-                        <div class="text-xs">{{ getFaultDescription(obdData.fault_code) }}</div>
+                  <div class="flex-1">
+                    <h3 class="text-xl font-bold">{{ getEfficiencyRating(efficiencyScore) }}</h3>
+                    <div class="mt-2">
+                      <div class="alert" :class="getEfficiencyAlertClass(efficiencyScore)">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" class="stroke-info shrink-0 w-6 h-6">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span>{{ getEfficiencyTip(efficiencyScore, obdData) }}</span>
                       </div>
                     </div>
-                    
-                    <div v-else class="alert alert-success">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span>No fault codes detected</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Stats cards on Slide 2 (if configured) -->
-              <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4" v-if="displayInSlide(1, 'statsCards')">
-                <!-- Speed, RPM, and Gear Stats Cards -->
-                <div class="stats shadow bg-base-100">
-                  <div class="stat">
-                    <div class="stat-title">Speed</div>
-                    <div class="stat-value">{{ formatNumber(obdData.speed, 1) }} km/h</div>
-                    <div class="stat-desc">Current Vehicle Speed</div>
-                  </div>
-                </div>
-
-                <div class="stats shadow bg-base-100">
-                  <div class="stat">
-                    <div class="stat-title">Engine RPM</div>
-                    <div class="stat-value">{{ formatNumber(obdData.rpm, 0) }}</div>
-                    <div class="stat-desc">
-                      <div class="badge" :class="getRPMBadgeClass(obdData.rpm)">
-                        {{ getRPMStatus(obdData.rpm) }}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="stats shadow bg-base-100">
-                  <div class="stat">
-                    <div class="stat-title">Gear Position</div>
-                    <div class="stat-value text-secondary">{{ formatGear(obdData.gear, obdData.speed) }}</div>
-                    <div class="stat-desc">Fuel Efficiency: {{ formatNumber(obdData.fuel_efficiency, 2) }} km/L</div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </SlideTransition>
+
+          <!-- Efficiency Chart -->
+          <div v-if="displayInSlide(1, 'efficiencyChart') && showEfficiencyChart && efficiencyScore !== null" class="mb-4">
+            <div class="card bg-base-100 shadow-xl">
+              <div class="card-body p-4">
+                <h2 class="card-title">Efficiency Chart</h2>
+                <div class="flex justify-center">
+                  <EfficiencyChart :efficiency="efficiencyScore" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Engine Status -->
+          <div v-if="displayInSlide(1, 'engineStatus')" class="mb-4">
+            <div class="card bg-base-100 shadow-xl">
+              <div class="card-body p-4">
+                <h2 class="card-title">Engine Status</h2>
+                <div class="overflow-x-auto">
+                  <table class="table table-zebra w-full">
+                    <tbody>
+                      <tr>
+                        <td>Temperature</td>
+                        <td>
+                          <div class="flex items-center gap-2">
+                            {{ formatNumber(obdData.engine_temp, 1) }} °C
+                            <span class="badge" :class="getTempBadgeClass(obdData.engine_temp)">
+                              {{ getTempStatus(obdData.engine_temp) }}
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td>Throttle Position</td>
+                        <td>
+                          <div class="flex items-center gap-2">
+                            <progress 
+                              class="progress progress-primary w-full" 
+                              :value="obdData.throttle" 
+                              max="100"
+                            ></progress>
+                            <span>{{ formatNumber(obdData.throttle, 1) }}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Diagnostic Status -->
+          <div v-if="displayInSlide(1, 'diagnosticStatus')" class="mb-4">
+            <div class="card bg-base-100 shadow-xl">
+              <div class="card-body p-4">
+                <h2 class="card-title">
+                  Diagnostic Status
+                  <div v-if="hasFaultCode" class="badge badge-error gap-2">
+                    Error
+                  </div>
+                  <div v-else class="badge badge-success gap-2">
+                    Normal
+                  </div>
+                </h2>
+                
+                <div v-if="hasFaultCode" class="alert alert-error">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <div>
+                    <div class="font-bold">Fault Code: {{ obdData.fault_code }}</div>
+                    <div class="text-xs">{{ getFaultDescription(obdData.fault_code) }}</div>
+                  </div>
+                </div>
+                
+                <div v-else class="alert alert-success">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>No fault codes detected</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Stats Cards -->
+          <div v-if="displayInSlide(1, 'statsCards')" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div class="stats shadow bg-base-100">
+              <div class="stat">
+                <div class="stat-title">Speed</div>
+                <div class="stat-value">{{ formatNumber(obdData.speed, 1) }} km/h</div>
+                <div class="stat-desc">Current Vehicle Speed</div>
+              </div>
+            </div>
+
+            <div class="stats shadow bg-base-100">
+              <div class="stat">
+                <div class="stat-title">Engine RPM</div>
+                <div class="stat-value">{{ formatNumber(obdData.rpm, 0) }}</div>
+                <div class="stat-desc">
+                  <div class="badge" :class="getRPMBadgeClass(obdData.rpm)">
+                    {{ getRPMStatus(obdData.rpm) }}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="stats shadow bg-base-100">
+              <div class="stat">
+                <div class="stat-title">Gear Position</div>
+                <div class="stat-value text-secondary">{{ formatGear(obdData.gear, obdData.speed) }}</div>
+                <div class="stat-desc">Fuel Efficiency: {{ formatNumber(obdData.fuel_efficiency, 2) }} km/L</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Empty State for Slide 2 -->
+        <div v-if="!hasDetailsComponents" class="flex flex-col items-center justify-center py-16 text-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-base-content opacity-50 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+          </svg>
+          <h3 class="text-xl font-bold mb-2">No Components Enabled</h3>
+          <p class="text-base-content opacity-70 mb-4">Use the settings menu to enable components for this view.</p>
+          <button @click="openSettings = true" class="btn btn-primary">Open Settings</button>
+        </div>
       </div>
     </div>
 
@@ -487,7 +503,6 @@
       <div class="modal-backdrop" @click="openSettings = false"></div>
     </div>
 
-    <!-- Toasts for Errors -->
     <div v-if="errorMessage" class="toast toast-end">
       <div class="alert alert-error">
         <span>{{ errorMessage }}</span>
@@ -549,12 +564,6 @@ const isDarkTheme = ref(true);
 
 // Sliding functionality
 const currentSlide = ref(0);
-const prevSlide = () => {
-  currentSlide.value = currentSlide.value === 0 ? 1 : 0;
-};
-const nextSlide = () => {
-  currentSlide.value = currentSlide.value === 0 ? 1 : 0;
-};
 
 // Component layout configuration
 const componentLayout = ref({
@@ -563,6 +572,26 @@ const componentLayout = ref({
   diagnosticStatus: { slide1: true, slide2: false },
   efficiencyScore: { slide1: false, slide2: true },
   efficiencyChart: { slide1: false, slide2: true }
+});
+
+// Check if slide 1 has any components enabled
+const isSlide1Empty = computed(() => {
+  return !showRPMGauge.value && 
+         !showSpeedChart.value && 
+         !displayInSlide(0, 'statsCards') && 
+         !displayInSlide(0, 'engineStatus') && 
+         !displayInSlide(0, 'diagnosticStatus') && 
+         !displayInSlide(0, 'efficiencyScore') && 
+         !(displayInSlide(0, 'efficiencyChart') && showEfficiencyChart.value);
+});
+
+// Computed property to check if slide 2 has any components enabled
+const hasDetailsComponents = computed(() => {
+  return displayInSlide(1, 'statsCards') || 
+         displayInSlide(1, 'engineStatus') || 
+         displayInSlide(1, 'diagnosticStatus') || 
+         displayInSlide(1, 'efficiencyScore') || 
+         (displayInSlide(1, 'efficiencyChart') && showEfficiencyChart.value);
 });
 
 // Helper to determine if a component should be displayed on a specific slide
@@ -591,7 +620,7 @@ const formatNumber = (num, decimals = 2) => {
 };
 
 const formatGear = (gear, speed) => {
-  if (speed === 0) return "N"; // Show "N" for Neutral if car is stopped
+  if (speed === 0) return "N";
   return gear !== undefined && gear !== null ? gear.toString() : "N";
 };
 
@@ -650,7 +679,6 @@ const getFaultDescription = (code) => {
     "P0300": "Random/Multiple Cylinder Misfire Detected",
     "P0171": "System Too Lean (Bank 1)",
     "P0420": "Catalyst System Efficiency Below Threshold",
-    // Add more codes as needed
   };
   
   return faultCodes[code] || "Unknown error code - consult a mechanic";
@@ -677,18 +705,17 @@ const fetchOBDData = async () => {
     
     // Apply a small amount of smoothing/interpolation for a more fluid feel
     if (obdData.value.speed !== 0) {
-      const smoothFactor = 0.3;  // Lower = smoother but slower transitions
+      const smoothFactor = 0.3;
       obdData.value = {
         speed: obdData.value.speed + (data.speed - obdData.value.speed) * smoothFactor,
         rpm: obdData.value.rpm + (data.rpm - obdData.value.rpm) * smoothFactor,
-        gear: data.gear, // Don't interpolate discrete values
+        gear: data.gear,
         fuel_efficiency: obdData.value.fuel_efficiency + (data.fuel_efficiency - obdData.value.fuel_efficiency) * smoothFactor,
         engine_temp: obdData.value.engine_temp + (data.engine_temp - obdData.value.engine_temp) * smoothFactor,
         throttle: obdData.value.throttle + (data.throttle - obdData.value.throttle) * smoothFactor,
-        fault_code: data.fault_code // Don't interpolate fault codes
+        fault_code: data.fault_code 
       };
     } else {
-      // Initial load or after a stop - no interpolation
       obdData.value = data;
     }
     
@@ -705,7 +732,7 @@ const calculateEfficiency = async () => {
     return;
   }
 
-  // Skip efficiency calculation if speed is zero
+  // Skip calculation if speed = zero
   if (obdData.value.speed === 0) {
     efficiencyScore.value = 0;
     return;
@@ -747,7 +774,6 @@ const calculateEfficiency = async () => {
     errorMessage.value = "";
   } catch (error) {
     console.error("Error calculating efficiency:", error);
-    // Only show error if it's not the speed=0 error
     if (!error.message.includes("Speed cannot be zero")) {
       errorMessage.value = error.message;
     }
@@ -769,7 +795,7 @@ const fetchTripData = async () => {
     tripData.value = {
       distance: tripData.value.distance + (data.distance - tripData.value.distance) * smoothFactor,
       avgSpeed: tripData.value.avgSpeed + (data.avgSpeed - tripData.value.avgSpeed) * smoothFactor,
-      duration: data.duration, // Don't smooth time
+      duration: data.duration,
       startTime: new Date(data.startTime),
       avgConsumption: tripData.value.avgConsumption + (data.avgConsumption - tripData.value.avgConsumption) * smoothFactor,
       fuelRemaining: tripData.value.fuelRemaining + (data.fuelRemaining - tripData.value.fuelRemaining) * smoothFactor,
@@ -877,7 +903,7 @@ onMounted(() => {
   obdFetchInterval = setInterval(fetchOBDData, 100); // Update every 100ms for smoother display
   efficiencyFetchInterval = setInterval(calculateEfficiency, 500); // Update efficiency less frequently
   tripDataInterval = setInterval(fetchTripData, 1000); // Update trip data every second
-  drivingDataInterval = setInterval(fetchDrivingBehavior, 2000); // Update driving behavior every 2 seconds
+  drivingDataInterval = setInterval(fetchDrivingBehavior, 2000); // Update driving data every 2 seconds
 });
 
 // Clear intervals when the component is unmounted
@@ -898,21 +924,28 @@ onBeforeUnmount(() => {
   }));
 });
 </script>
-
 <style scoped>
-/* Sliding functionality */
-.slider-container {
-  height: calc(100vh - 3rem);
-  position: relative;
+/* Slide container */
+[v-show="currentSlide === 0"],
+[v-show="currentSlide === 1"] {
+  min-height: 300px;
+  height: auto;
 }
 
-.slides {
-  width: 200%;
-  display: flex;
+/* Ensure containers properly collapse when empty */
+.container > div > div:empty {
+  display: none;
 }
 
-.slide {
-  width: 50%;
+/* Transition effects for slides */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 /* High contrast mode styles */
@@ -952,5 +985,134 @@ onBeforeUnmount(() => {
   .grid.grid-cols-3 {
     grid-template-columns: 1fr;
   }
+  
+  .navbar {
+    flex-direction: column;
+    height: auto;
+    padding: 0.5rem;
+  }
+  
+  .tabs {
+    margin: 0.5rem 0;
+  }
+}
+</style>
+<style scoped>
+/* Make slides completely independent containers */
+.slide-container {
+  min-height: 300px;
+  position: relative;
+  height: auto;
+}
+
+/* Ensure container elements are properly positioned */
+.container {
+  position: relative;
+}
+
+/* Transition effects for slides */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* High contrast mode styles */
+:global(.high-contrast) {
+  --contrast-text: white;
+  --contrast-bg: black;
+  --contrast-highlight: yellow;
+}
+
+:global(.high-contrast) .card {
+  border: 2px solid var(--contrast-highlight);
+}
+
+:global(.high-contrast) .stat-title, 
+:global(.high-contrast) .card-title {
+  color: var(--contrast-highlight) !important;
+}
+
+:global(.high-contrast) .stat-value {
+  color: var(--contrast-text) !important;
+  font-weight: 800;
+}
+
+/* Card animation effects */
+.card {
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+/* Empty state styles */
+.flex.flex-col.items-center.justify-center {
+  min-height: 400px;
+}
+
+/* Prevent flickering during transitions */
+[v-if="currentSlide === 0"],
+[v-if="currentSlide === 1"] {
+  transition: none;
+}
+
+/* Fix for any gap between components */
+.mb-4:last-child {
+  margin-bottom: 0;
+}
+
+/* Mobile responsiveness adjustments */
+@media (max-width: 768px) {
+  .grid.grid-cols-2, 
+  .grid.grid-cols-3 {
+    grid-template-columns: 1fr;
+  }
+  
+  .navbar {
+    flex-direction: column;
+    height: auto;
+    padding: 0.5rem;
+  }
+  
+  .tabs {
+    margin: 0.5rem 0;
+  }
+  
+  .slide-container {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+  
+  /* Adjust spacing for mobile */
+  .card-body {
+    padding: 0.75rem;
+  }
+  
+  /* Make empty state more compact on mobile */
+  .flex.flex-col.items-center.justify-center {
+    min-height: 300px;
+    padding: 1rem;
+  }
+}
+
+/* Dark theme specific adjustments */
+[data-theme="dark"] .card {
+  background-color: #1f2937;
+}
+
+[data-theme="dark"] .stats {
+  background-color: #1f2937;
+}
+
+/* Light theme specific adjustments */
+[data-theme="light"] .card:hover {
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.05);
 }
 </style>
