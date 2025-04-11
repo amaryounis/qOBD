@@ -60,13 +60,13 @@
       <!-- Main Dashboard (Slide 1) -->
       <div v-if="currentSlide === 0" class="slide-container px-4 py-4">
         <div v-if="!isSlide1Empty">
-          <!-- Primary Gauges -->
-          <div v-if="showRPMGauge || showSpeedChart" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          <!-- Primary Gauges - ENLARGED VERSION -->
+          <div v-if="showRPMGauge || showSpeedChart" class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             <!-- RPM Gauge -->
             <div v-if="showRPMGauge" class="card bg-base-100 shadow-xl">
               <div class="card-body p-4">
-                <h2 class="card-title text-center w-full">RPM Gauge</h2>
-                <div class="flex justify-center h-64">
+                <h2 class="card-title text-center w-full text-2xl mb-4">RPM Gauge</h2>
+                <div class="flex justify-center h-80">
                   <RPMGauge :rpm="obdData.rpm" />
                 </div>
               </div>
@@ -75,8 +75,8 @@
             <!-- Speed Gauge -->
             <div v-if="showSpeedChart" class="card bg-base-100 shadow-xl">
               <div class="card-body p-4">
-                <h2 class="card-title text-center w-full">Speed Gauge</h2>
-                <div class="flex justify-center h-64">
+                <h2 class="card-title text-center w-full text-2xl mb-4">Speed Gauge</h2>
+                <div class="flex justify-center h-80">
                   <SpeedGauge :speed="obdData.speed" />
                 </div>
               </div>
@@ -84,7 +84,8 @@
           </div>
 
           <!-- Stats Cards -->
-          <div v-if="displayInSlide(0, 'statsCards')" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div v-if="displayInSlide(0, 'statsCards')" class="grid grid-cols-1 md:grid-cols-3 xl:grid-cols-5 gap-5 mb-5">
+            <!-- Speed -->
             <div class="stats shadow bg-base-100">
               <div class="stat">
                 <div class="stat-title">Speed</div>
@@ -93,6 +94,7 @@
               </div>
             </div>
 
+            <!-- RPM -->
             <div class="stats shadow bg-base-100">
               <div class="stat">
                 <div class="stat-title">Engine RPM</div>
@@ -105,11 +107,40 @@
               </div>
             </div>
 
+            <!-- Gear -->
             <div class="stats shadow bg-base-100">
               <div class="stat">
                 <div class="stat-title">Gear Position</div>
                 <div class="stat-value text-secondary">{{ formatGear(obdData.gear, obdData.speed) }}</div>
                 <div class="stat-desc">Fuel Efficiency: {{ formatNumber(obdData.fuel_efficiency, 2) }} km/L</div>
+              </div>
+            </div>
+
+            <!-- MPG -->
+            <div v-if="showMPGDisplay" class="stats shadow bg-base-100">
+              <div class="stat">
+                <div class="stat-title">MPG</div>
+                <div class="stat-value">{{ calculateMPG(obdData.fuel_efficiency).toFixed(1) }} mpg</div>
+                <div class="stat-desc">
+                  <span class="badge" :class="getMPGBadgeClass(calculateMPG(obdData.fuel_efficiency))">
+                    {{ getMPGStatus(calculateMPG(obdData.fuel_efficiency)) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Fuel Level -->
+            <div v-if="showFuelGauge" class="stats shadow bg-base-100">
+              <div class="stat">
+                <div class="stat-title">Fuel Level</div>
+                <div class="stat-value">{{ formatNumber(obdData.fuel, 1) }}%</div>
+                <div class="stat-desc">
+                  <FuelBar 
+                    :fuelRemaining="obdData.fuel" 
+                    :fuelCapacity="50" 
+                    :fuelEfficiency="obdData.fuel_efficiency"
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -423,6 +454,14 @@
             <input type="checkbox" v-model="showSpeedChart" class="toggle toggle-primary" />
           </label>
           <label class="label cursor-pointer">
+            <span class="label-text">Show MPG</span> 
+            <input type="checkbox" v-model="showMPGDisplay" class="toggle toggle-primary" />
+          </label>
+          <label class="label cursor-pointer">
+            <span class="label-text">Show Fuel Gauge</span> 
+            <input type="checkbox" v-model="showFuelGauge" class="toggle toggle-primary" />
+          </label>
+          <label class="label cursor-pointer">
             <span class="label-text">Show Efficiency Chart</span> 
             <input type="checkbox" v-model="showEfficiencyChart" class="toggle toggle-primary" />
           </label>
@@ -521,6 +560,8 @@ import TripInfoComponent from "./TripInfoComponent.vue";
 import DrivingBehaviorComponent from "./DrivingBehaviorComponent.vue";
 import SlideTransition from "./SlideTransition.vue";
 import PredictiveModel from "./PredictiveModel.vue";
+import MPGDisplay from "./MPGDisplay.vue";
+import FuelBar from "./FuelBar.vue";
 
 // State variables
 const obdData = ref({
@@ -530,7 +571,8 @@ const obdData = ref({
   fuel_efficiency: 0,
   engine_temp: 0,
   throttle: 0,
-  fault_code: "None"
+  fault_code: "None",
+  fuel: 0
 });
 const tripData = ref({
   distance: 0,
@@ -561,6 +603,29 @@ const showSpeedChart = ref(true);
 const showEfficiencyChart = ref(true);
 const highContrastMode = ref(false);
 const isDarkTheme = ref(true);
+const fuelTankSize = ref(50.0);
+
+const showMPGDisplay = ref(true);
+const showFuelGauge = ref(true);
+
+const calculateMPG = (kmPerLiter) => {
+  if (!kmPerLiter) return 0;
+  // 1 km/L = 2.352 MPG (US)
+  return kmPerLiter * 2.352;
+};
+
+// Helper functions for MPG display
+const getMPGStatus = (mpg) => {
+  if (mpg < 20) return "Poor";
+  if (mpg < 35) return "Average";
+  return "Good";
+};
+
+const getMPGBadgeClass = (mpg) => {
+  if (mpg < 20) return "badge-error";
+  if (mpg < 35) return "badge-warning";
+  return "badge-success";
+};
 
 // Sliding functionality
 const currentSlide = ref(0);
@@ -578,6 +643,8 @@ const componentLayout = ref({
 const isSlide1Empty = computed(() => {
   return !showRPMGauge.value && 
          !showSpeedChart.value && 
+         !showMPGDisplay.value &&
+         !showFuelGauge.value &&
          !displayInSlide(0, 'statsCards') && 
          !displayInSlide(0, 'engineStatus') && 
          !displayInSlide(0, 'diagnosticStatus') && 
@@ -713,7 +780,8 @@ const fetchOBDData = async () => {
         fuel_efficiency: obdData.value.fuel_efficiency + (data.fuel_efficiency - obdData.value.fuel_efficiency) * smoothFactor,
         engine_temp: obdData.value.engine_temp + (data.engine_temp - obdData.value.engine_temp) * smoothFactor,
         throttle: obdData.value.throttle + (data.throttle - obdData.value.throttle) * smoothFactor,
-        fault_code: data.fault_code 
+        fault_code: data.fault_code,
+        fuel: data.fuel !== undefined ? data.fuel : (obdData.value.fuel || 0)
       };
     } else {
       obdData.value = data;
@@ -857,6 +925,8 @@ const saveSettings = () => {
     showRPMGauge: showRPMGauge.value,
     showSpeedChart: showSpeedChart.value,
     showEfficiencyChart: showEfficiencyChart.value,
+    showMPGGauge: showMPGDisplay.value,
+    showFuelGauge: showFuelGauge.value,
     highContrastMode: highContrastMode.value,
     componentLayout: componentLayout.value
   }));
@@ -878,6 +948,9 @@ onMounted(() => {
       showSpeedChart.value = settings.showSpeedChart ?? showSpeedChart.value;
       showEfficiencyChart.value = settings.showEfficiencyChart ?? showEfficiencyChart.value;
       highContrastMode.value = settings.highContrastMode || highContrastMode.value;
+
+      showMPGDisplay.value = settings.showMPGDisplay ?? showMPGDisplay.value;
+      showFuelGauge.value = settings.showFuelGauge ?? showFuelGauge.value;
       
       // Load component layout if available
       if (settings.componentLayout) {

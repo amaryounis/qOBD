@@ -19,8 +19,12 @@ app.add_middleware(
 )
 
 # Load the custom dataset
-csv_path = os.path.join(os.path.dirname(__file__), "data/driving_sim_upt.csv")
+csv_path = os.path.join(os.path.dirname(__file__), "data/terst.csv")
 df = pd.read_csv(csv_path)
+
+# Print CSV column names and some sample data for debugging
+print("CSV Columns:", df.columns.tolist())
+print("Sample fuel data:", df['fuel'].head(5).tolist())
 
 # Create an iterator to loop through the dataset continuously
 data_iterator = cycle(df.to_dict(orient="records"))
@@ -53,6 +57,7 @@ class OBDData(BaseModel):
     throttle: float
     fault_code: str
     gear: int
+    fuel: float = 0  # Add fuel property
 
 class TripData(BaseModel):
     distance: float
@@ -116,22 +121,49 @@ def get_real_time_obd_data():
     """
     try:
         data = next(data_iterator)  # Get the next row
+        
+        # Debug: Print the raw data row
+        print(f"Raw data row from CSV: {data}")
 
         # Replace NaN or Infinity values with 0
         for key in data:
             if isinstance(data[key], float) and (math.isnan(data[key]) or math.isinf(data[key])):
                 data[key] = 0.0  # Set a safe default value
+        
+        # Extract and convert fuel value, ensuring it's a valid float
+        fuel_value = 0.0
+        if 'fuel' in data:
+            try:
+                fuel_value = float(data['fuel'])
+                print(f"Extracted fuel value: {fuel_value}")
+            except (ValueError, TypeError):
+                print(f"Error converting fuel value: {data['fuel']}")
+                fuel_value = 0.0
+
+        # Convert gear to int if possible
+        gear_value = 0
+        if 'gear' in data:
+            try:
+                gear_value = int(float(data['gear']))
+            except (ValueError, TypeError):
+                try:
+                    # If gear is something like 'N' or 'R'
+                    gear_value = data['gear']
+                except:
+                    gear_value = 0
 
         return {
             "speed": data["speed"],
             "rpm": data["rpm"],
-            "gear": int(data["gear"]),  # Ensure gear is sent
+            "gear": gear_value,
             "fuel_efficiency": data["fuel_efficiency"],
             "engine_temp": data["engine_temp"],
             "throttle": data["throttle"],
-            "fault_code": data["fault_code"]
+            "fault_code": data["fault_code"],
+            "fuel": fuel_value  # Include the fuel value
         }
     except Exception as e:
+        print(f"Error in get_real_time_obd_data: {str(e)}")
         return {"error": f"Failed to retrieve OBD data: {str(e)}"}
 
 @app.post("/api/efficiency-score")
