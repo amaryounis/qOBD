@@ -740,6 +740,7 @@ const getEfficiencyTip = (score, data) => {
 
 const getFaultDescription = (code) => {
   const faultCodes = {
+    "0": "No Faults",
     "P0300": "Random/Multiple Cylinder Misfire Detected",
     "P0171": "System Too Lean (Bank 1)",
     "P0420": "Catalyst System Efficiency Below Threshold",

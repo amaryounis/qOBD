@@ -1,138 +1,9 @@
-"""
-Predictive Fuel Efficiency Model
-
-This module implements a lightweight predictive model for fuel efficiency
-based on historical driving data. It uses a simple linear regression model
-to predict fuel efficiency based on RPM, speed, throttle position, and engine load.
-"""
-
-class FuelEfficiencyPredictor:
-    def __init__(self):
-        # Model coefficients learned from historical data
-        self.intercept = -56.107451813391386
-        self.coefficients = {
-            'rpm': 0.010832313812210679,
-            'speed': 0.1815051138980068,
-            'throttle': 0.9941380321085451,
-            'engineLoad': 0.357527001532968
-        }
-        
-
-    
-    def predict_maf(self, rpm, speed, throttle, engine_load):
-        """
-        Predict Mass Air Flow (MAF) based on vehicle parameters
-        
-        Args:
-            rpm: Engine RPM
-            speed: Vehicle speed in km/h
-            throttle: Throttle position percentage (0-100)
-            engine_load: Engine load percentage (0-100)
-            
-        Returns:
-            Predicted MAF value
-        """
-        return (self.intercept + 
-                (self.coefficients['rpm'] * rpm) + 
-                (self.coefficients['speed'] * speed) + 
-                (self.coefficients['throttle'] * throttle) + 
-                (self.coefficients['engineLoad'] * engine_load))
-    
-    def convert_maf_to_efficiency(self, maf, speed):
-        """
-        Convert MAF to fuel efficiency (km/L)
-        
-        Args:
-            maf: Mass Air Flow
-            speed: Vehicle speed in km/h
-            
-        Returns:
-            Estimated fuel efficiency in km/L
-        """
-        if speed < 1:
-            return 0 
-        
-        base_efficiency = 15 
-        maf_factor = 0.5
-        
-        efficiency = base_efficiency - (maf * maf_factor)
-        
-        if efficiency < 0:
-            return 0
-        if efficiency > 30:
-            return 30
-            
-        return efficiency
-    
-    def predict_efficiency(self, rpm, speed, throttle, engine_load):
-        """
-        Predict fuel efficiency directly from vehicle parameters
-        
-        Args:
-            rpm: Engine RPM
-            speed: Vehicle speed in km/h
-            throttle: Throttle position percentage (0-100)
-            engine_load: Engine load percentage (0-100)
-            
-        Returns:
-            Predicted fuel efficiency in km/L
-        """
-        predicted_maf = self.predict_maf(rpm, speed, throttle, engine_load)
-        return self.convert_maf_to_efficiency(predicted_maf, speed)
-    
-    def predict_future_efficiency(self, current_data, driving_style):
-        """
-        Predict future efficiency based on current data and driving style
-        
-        Args:
-            current_data: Dict with current rpm, speed, throttle, engine_load
-            driving_style: String indicating driving style ('eco', 'normal', 'aggressive')
-            
-        Returns:
-            Dict with efficiency predictions for next trip and monthly average
-        """
-
-        current_efficiency = self.predict_efficiency(
-            current_data['rpm'],
-            current_data['speed'],
-            current_data['throttle'],
-            current_data['engine_load']
-        )
-        
-        if driving_style == 'eco':
-            next_trip_factor = 1.05
-            monthly_factor = 1.10
-        elif driving_style == 'aggressive':
-            next_trip_factor = 0.90
-            monthly_factor = 0.85
-        else: 
-            next_trip_factor = 1.0
-            monthly_factor = 1.0
-        
-        import random
-        next_trip_factor *= random.uniform(0.97, 1.03)
-        monthly_factor *= random.uniform(0.95, 1.05)
-        
-        return {
-            'current': current_efficiency,
-            'nextTrip': current_efficiency * next_trip_factor,
-            'monthly': current_efficiency * monthly_factor,
-            'improvement': self._get_improvement_tip(current_data, driving_style)
-        }
-    
-    def _get_improvement_tip(self, data, driving_style):
-        """Generate an improvement tip based on current data and driving style"""
-        if data['rpm'] > 3000:
-            return "Try shifting gears earlier to reduce RPM and improve efficiency."
-        elif data['throttle'] > 50:
-            return "Ease up on the accelerator for better fuel economy."
-        elif driving_style == 'aggressive':
-            return "Consider a smoother driving style with more gradual acceleration."
-        elif data['speed'] > 100:
-            return "Reducing highway speed by 10-20 km/h can significantly improve fuel economy."
-        else:
-            return "Maintain steady speeds and anticipate stops to maximize efficiency."
-
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from sklearn.preprocessing import StandardScaler
+import pickle
+import os
+import random
 
 def process_obd_data(obd_data):
     """
@@ -144,12 +15,10 @@ def process_obd_data(obd_data):
     Returns:
         Dict with processed data ready for the prediction model
     """
-
     throttle = 0
     engine_load = 0
     
     if isinstance(obd_data.get('throttle'), str):
-
         throttle_str = obd_data['throttle'].replace('%', '').replace(',', '.')
         try:
             throttle = float(throttle_str)
@@ -159,7 +28,6 @@ def process_obd_data(obd_data):
         throttle = float(obd_data.get('throttle', 0))
     
     if isinstance(obd_data.get('engine_load'), str):
-
         load_str = obd_data['engine_load'].replace('%', '').replace(',', '.')
         try:
             engine_load = float(load_str)
@@ -174,7 +42,6 @@ def process_obd_data(obd_data):
         'throttle': throttle,
         'engine_load': engine_load
     }
-
 
 def determine_driving_style(data_history):
     """
@@ -198,3 +65,275 @@ def determine_driving_style(data_history):
         return 'eco'
     else:
         return 'normal'
+
+class FuelEfficiencyPredictor:
+    def __init__(self, model_path=None):
+        """
+        Initialize the predictor by loading a trained model
+        
+        Args:
+            model_path: Path to a saved model file (.pkl)
+        """
+        self.model = None
+        self.scaler = StandardScaler()
+        
+        if model_path and os.path.exists(model_path):
+            try:
+                with open(model_path, 'rb') as f:
+                    saved_data = pickle.load(f)
+                    self.model = saved_data['model']
+                    self.scaler = saved_data['scaler']
+                print(f"Loaded model from {model_path}")
+            except Exception as e:
+                print(f"Error loading model: {str(e)}")
+                self.model = None
+    
+    def train(self, data_path, output_model_path=None):
+        """
+        Train the model using data from CSV
+        
+        Args:
+            data_path: Path to the CSV file containing OBD data
+            output_model_path: Where to save the model (optional)
+            
+        Returns:
+            Training score (R²)
+        """
+        # Load and preprocess data
+        df = self._load_and_preprocess_data(data_path)
+        
+        if df is None or len(df) == 0:
+            print("Error: No valid data for training")
+            return 0
+        
+        # Extract features and target
+        X, y = self._prepare_training_data(df)
+        
+        if len(X) == 0:
+            print("Error: No valid training examples")
+            return 0
+        
+        # Split into training and validation sets
+        from sklearn.model_selection import train_test_split
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, random_state=42)
+        
+        # Scale features
+        X_train_scaled = self.scaler.fit_transform(X_train)
+        X_val_scaled = self.scaler.transform(X_val)
+        
+        # Train model
+        self.model = LinearRegression()
+        self.model.fit(X_train_scaled, y_train)
+        
+        # Evaluate model
+        train_score = self.model.score(X_train_scaled, y_train)
+        val_score = self.model.score(X_val_scaled, y_val)
+        
+        print(f"Model trained. R² (train): {train_score:.4f}, R² (validation): {val_score:.4f}")
+        
+        # Print coefficients
+        feature_names = ['ENGINE_RPM', 'SPEED', 'THROTTLE_POS', 'ENGINE_LOAD']
+        print("Model coefficients:")
+        print(f"Intercept: {self.model.intercept_:.6f}")
+        for name, coef in zip(feature_names, self.model.coef_):
+            print(f"{name}: {coef:.6f}")
+        
+        # Save model if requested
+        if output_model_path:
+            with open(output_model_path, 'wb') as f:
+                pickle.dump({
+                    'model': self.model,
+                    'scaler': self.scaler
+                }, f)
+            print(f"Model saved to {output_model_path}")
+        
+        return val_score
+    
+    def _load_and_preprocess_data(self, data_path):
+        """
+        Load and preprocess CSV data
+        
+        Args:
+            data_path: Path to CSV file
+            
+        Returns:
+            Preprocessed DataFrame
+        """
+        try:
+            import pandas as pd
+            df = pd.read_csv(data_path)
+            print(f"Loaded data from {data_path} with {len(df)} rows")
+            
+            # Check for required columns
+            required_columns = ['ENGINE_RPM', 'SPEED', 'THROTTLE_POS', 'ENGINE_LOAD', 'MAF']
+            missing_columns = [col for col in required_columns if col not in df.columns]
+            
+            if missing_columns:
+                print(f"Error: CSV is missing these required columns: {missing_columns}")
+                return None
+            
+            # Handle string values in required fields
+            for col in required_columns:
+                if df[col].dtype == object:
+                    # Remove % signs and other non-numeric characters
+                    df[col] = df[col].str.replace('%', '').str.replace(',', '.')
+                    # Convert to float
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Remove rows with missing values
+            original_len = len(df)
+            df = df.dropna(subset=required_columns)
+            print(f"Removed {original_len - len(df)} rows with missing values")
+            
+            # Remove outliers and invalid data
+            df = df[(df['SPEED'] >= 0) & (df['ENGINE_RPM'] > 0)]
+            df = df[(df['THROTTLE_POS'] >= 0) & (df['THROTTLE_POS'] <= 100)]
+            df = df[(df['ENGINE_LOAD'] >= 0) & (df['ENGINE_LOAD'] <= 100)]
+            df = df[df['MAF'] > 0]
+            
+            print(f"After cleaning: {len(df)} rows")
+            
+            return df
+            
+        except Exception as e:
+            print(f"Error loading data: {str(e)}")
+            return None
+    
+    def _prepare_training_data(self, df):
+        """
+        Prepare training data by creating the derived fuel efficiency target
+        
+        Args:
+            df: Preprocessed DataFrame
+            
+        Returns:
+            (X, y) tuple for training
+        """
+        # Calculate fuel efficiency based on MAF and speed
+        # Formula: Efficiency (km/L) = Speed (km/h) / (MAF (g/s) * 0.3355)
+        # 0.3355 is a conversion factor for gasoline: 1 g/s of air ≈ 0.3355 L/h of fuel
+        
+        # Create a copy to avoid warnings
+        df_calc = df.copy()
+        
+        # Calculate fuel efficiency
+        # Avoid division by zero or negative values
+        mask = (df_calc['SPEED'] > 0) & (df_calc['MAF'] > 0)
+        df_calc.loc[mask, 'FUEL_EFFICIENCY'] = df_calc.loc[mask, 'SPEED'] / (df_calc.loc[mask, 'MAF'] * 0.3355)
+        
+        # Remove extreme values (likely calculation errors)
+        df_calc = df_calc[(df_calc['FUEL_EFFICIENCY'] > 0) & (df_calc['FUEL_EFFICIENCY'] <= 30)]
+        
+        # Get features and target
+        X = df_calc[['ENGINE_RPM', 'SPEED', 'THROTTLE_POS', 'ENGINE_LOAD']].values
+        y = df_calc['FUEL_EFFICIENCY'].values
+        
+        print(f"Prepared {len(X)} training examples")
+        print(f"Average calculated fuel efficiency: {y.mean():.2f} km/L")
+        
+        return X, y
+    
+    def predict_efficiency(self, rpm, speed, throttle, engine_load):
+        """
+        Predict fuel efficiency from vehicle parameters
+        
+        Args:
+            rpm: Engine RPM
+            speed: Vehicle speed in km/h
+            throttle: Throttle position percentage (0-100)
+            engine_load: Engine load percentage (0-100)
+            
+        Returns:
+            Predicted fuel efficiency in km/L
+        """
+        if self.model is None:
+            # If no model is loaded, use a fallback calculation
+            # This is just to ensure compatibility with the old code
+            if speed < 1:
+                return 0
+            
+            # Simple estimate based on typical relationship
+            base_efficiency = 15
+            rpm_factor = 0.001
+            throttle_factor = 0.05
+            
+            efficiency = base_efficiency - (rpm * rpm_factor) - (throttle * throttle_factor)
+            
+            if efficiency < 0:
+                return 0
+            if efficiency > 30:
+                return 30
+                
+            return efficiency
+        
+        # Handle special case: vehicle not moving
+        if speed < 1:
+            return 0
+        
+        # Prepare input
+        X = np.array([[rpm, speed, throttle, engine_load]])
+        X_scaled = self.scaler.transform(X)
+        
+        # Predict
+        predicted = self.model.predict(X_scaled)[0]
+        
+        # Constrain to reasonable values
+        if predicted < 0:
+            return 0
+        if predicted > 30:
+            return 30
+        
+        return predicted
+    
+    def predict_future_efficiency(self, current_data, driving_style):
+        """
+        Predict future efficiency based on current data and driving style
+        
+        Args:
+            current_data: Dict with current rpm, speed, throttle, engine_load
+            driving_style: String indicating driving style ('eco', 'normal', 'aggressive')
+            
+        Returns:
+            Dict with efficiency predictions for next trip and monthly average
+        """
+        current_efficiency = self.predict_efficiency(
+            current_data['rpm'],
+            current_data['speed'],
+            current_data['throttle'],
+            current_data['engine_load']
+        )
+        
+        # Adjust based on driving style
+        if driving_style == 'eco':
+            next_trip_factor = 1.05
+            monthly_factor = 1.10
+        elif driving_style == 'aggressive':
+            next_trip_factor = 0.90
+            monthly_factor = 0.85
+        else: 
+            next_trip_factor = 1.0
+            monthly_factor = 1.0
+        
+        # Small random variation for realism
+        next_trip_factor *= random.uniform(0.97, 1.03)
+        monthly_factor *= random.uniform(0.95, 1.05)
+        
+        return {
+            'current': current_efficiency,
+            'nextTrip': current_efficiency * next_trip_factor,
+            'monthly': current_efficiency * monthly_factor,
+            'improvement': self._get_improvement_tip(current_data, driving_style)
+        }
+    
+    def _get_improvement_tip(self, data, driving_style):
+        """Generate an improvement tip based on current data and driving style"""
+        if data['rpm'] > 3000:
+            return "Try shifting gears earlier to reduce RPM and improve efficiency."
+        elif data['throttle'] > 50:
+            return "Ease up on the accelerator for better fuel economy."
+        elif driving_style == 'aggressive':
+            return "Consider a smoother driving style with more gradual acceleration."
+        elif data['speed'] > 100:
+            return "Reducing highway speed by 10-20 km/h can significantly improve fuel economy."
+        else:
+            return "Maintain steady speeds and anticipate stops to maximize efficiency."

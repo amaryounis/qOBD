@@ -1,13 +1,13 @@
 <template>
     <div class="card bg-base-100 shadow-xl">
       <div class="card-body p-4">
-        <h2 class="card-title">Driving Behavior Analysis</h2>
+        <h2 class="card-title">Driving Behaviour Analysis</h2>
         
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-          <!-- Acceleration Behavior -->
+          <!-- Acceleration Behaviour -->
           <div class="card bg-base-200">
             <div class="card-body p-4">
-              <h3 class="text-lg font-semibold">Acceleration Behavior</h3>
+              <h3 class="text-lg font-semibold">Acceleration Behaviour</h3>
               <div class="mt-2">
                 <div class="flex justify-between">
                   <span>Score:</span>
@@ -36,10 +36,10 @@
             </div>
           </div>
           
-          <!-- Braking Behavior -->
+          <!-- Braking Behaviour -->
           <div class="card bg-base-200">
             <div class="card-body p-4">
-              <h3 class="text-lg font-semibold">Braking Behavior</h3>
+              <h3 class="text-lg font-semibold">Braking Behaviour</h3>
               <div class="mt-2">
                 <div class="flex justify-between">
                   <span>Score:</span>
@@ -150,7 +150,7 @@
     return props.drivingData.currentEfficiency - props.drivingData.weekEfficiency;
   });
   
-  // Color classes based on scores
+  // Colour classes based on scores
   const accelerationColorClass = computed(() => {
     if (accelerationScore.value >= 4) return 'progress-success';
     if (accelerationScore.value >= 3) return 'progress-warning';

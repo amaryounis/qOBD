@@ -22,7 +22,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-fuel_predictor = FuelEfficiencyPredictor()
+fuel_predictor = FuelEfficiencyPredictor("fuel_efficiency_model.pkl")
 
 recent_obd_data = []
 MAX_HISTORY_SIZE = 50
@@ -33,20 +33,6 @@ try:
     data_iterator = cycle(df.to_dict(orient="records"))
 except FileNotFoundError:
     print(f"Warning: CSV file not found at {csv_path}. Using simulated data.")
-    simulated_data = [
-        {
-            "speed": random.uniform(0, 120),
-            "rpm": random.uniform(800, 3500),
-            "fuel_efficiency": random.uniform(5, 15),
-            "engine_temp": random.uniform(70, 95),
-            "throttle": random.uniform(0, 100),
-            "fault_code": "None" if random.random() > 0.05 else f"P{random.randint(0, 9)}{random.randint(0, 9)}{random.randint(0, 9)}{random.randint(0, 9)}",
-            "gear": random.randint(1, 6),
-            "fuel": random.uniform(10, 100),
-            "engine_load": random.uniform(20, 80)
-        } for _ in range(100)
-    ]
-    data_iterator = cycle(simulated_data)
 
 # Trip data
 trip_start_time = datetime.now() - timedelta(minutes=random.randint(15, 120))

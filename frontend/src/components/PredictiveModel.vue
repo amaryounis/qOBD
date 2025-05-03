@@ -157,10 +157,10 @@
           </div>
         </div>
         
-        <!-- Potential Optimizations -->
+        <!-- Potential Optimisations -->
         <div class="card bg-base-200">
           <div class="card-body p-4">
-            <h3 class="text-lg font-semibold">Optimization Suggestions</h3>
+            <h3 class="text-lg font-semibold">Optimisation Suggestions</h3>
             
             <div class="mt-2 space-y-2">
               <div v-for="(item, index) in predictions.optimizations" :key="index" 
