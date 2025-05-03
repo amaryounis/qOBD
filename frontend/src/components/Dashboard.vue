@@ -133,14 +133,11 @@
             <div v-if="showFuelGauge" class="stats shadow bg-base-100">
               <div class="stat">
                 <div class="stat-title">Fuel Level</div>
-                <div class="stat-value">{{ formatNumber(obdData.fuel, 1) }}%</div>
-                <div class="stat-desc">
-                  <FuelBar 
+                <FuelBar 
                     :fuelRemaining="obdData.fuel" 
                     :fuelCapacity="50" 
                     :fuelEfficiency="obdData.fuel_efficiency"
                   />
-                </div>
               </div>
             </div>
           </div>
@@ -751,7 +748,7 @@ const getFaultDescription = (code) => {
   return faultCodes[code] || "Unknown error code - consult a mechanic";
 };
 
-// Theme toggle function
+
 const toggleTheme = () => {
   isDarkTheme.value = !isDarkTheme.value;
   theme.value = isDarkTheme.value ? "dark" : "light";
@@ -759,7 +756,7 @@ const toggleTheme = () => {
   localStorage.setItem('dashboardTheme', theme.value);
 };
 
-// API functions with faster update rate for real-time feel
+
 const fetchOBDData = async () => {
   try {
     const response = await fetch("http://localhost:8000/api/real-time-obd-data");
@@ -770,7 +767,7 @@ const fetchOBDData = async () => {
       throw new Error(data.error);
     }
     
-    // Apply a small amount of smoothing/interpolation for a more fluid feel
+
     if (obdData.value.speed !== 0) {
       const smoothFactor = 0.3;
       obdData.value = {
@@ -800,7 +797,7 @@ const calculateEfficiency = async () => {
     return;
   }
 
-  // Skip calculation if speed = zero
+
   if (obdData.value.speed === 0) {
     efficiencyScore.value = 0;
     return;

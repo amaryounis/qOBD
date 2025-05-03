@@ -1,8 +1,5 @@
 <template>
-  <div class="card bg-base-100 shadow-xl">
-    <div class="card-body p-4">
-      <h2 class="card-title text-center w-full">Fuel Level</h2>
-      <div class="flex flex-col items-center">
+  <div class="flex flex-col items-center">
         <!-- Fuel percentage display -->
         <div class="text-3xl font-bold mb-2">
           {{ fuelPercentage.toFixed(1) }}%
@@ -22,14 +19,8 @@
           <span class="badge" :class="fuelStatusBadgeClass">{{ fuelStatus }}</span>
         </div>
         
-        <!-- Fuel details -->
-        <div class="mt-4 text-center">
-          <p>{{ fuelRemaining.toFixed(1) }} / {{ fuelCapacity.toFixed(1) }} Liters</p>
-          <p class="text-sm opacity-70">Estimated Range: {{ estimatedRange.toFixed(0) }} km</p>
-        </div>
+        
       </div>
-    </div>
-  </div>
 </template>
 
 <script setup>
@@ -67,7 +58,7 @@ const fuelBarColorClass = computed(() => {
 const fuelStatus = computed(() => {
   if (fuelPercentage.value < 20) return 'Low';
   if (fuelPercentage.value < 50) return 'Medium';
-  return 'Full';
+  return 'Good';
 });
 
 // Determine badge class for fuel status

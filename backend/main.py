@@ -1,35 +1,54 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from pydantic import validator
+from typing import Union
 import pandas as pd
 from itertools import cycle
 import os, math
 import random
 from datetime import datetime, timedelta
 
+from fuel_efficiency_model import FuelEfficiencyPredictor, process_obd_data, determine_driving_style
+
 app = FastAPI()
 
-# Enable CORS
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Load the custom dataset
-csv_path = os.path.join(os.path.dirname(__file__), "data/terst.csv")
-df = pd.read_csv(csv_path)
+fuel_predictor = FuelEfficiencyPredictor()
 
-# Print CSV column names and some sample data for debugging
-print("CSV Columns:", df.columns.tolist())
-print("Sample fuel data:", df['fuel'].head(5).tolist())
+recent_obd_data = []
+MAX_HISTORY_SIZE = 50
 
-# Create an iterator to loop through the dataset continuously
-data_iterator = cycle(df.to_dict(orient="records"))
+csv_path = os.path.join(os.path.dirname(__file__), "data/drv.csv")
+try:
+    df = pd.read_csv(csv_path)
+    data_iterator = cycle(df.to_dict(orient="records"))
+except FileNotFoundError:
+    print(f"Warning: CSV file not found at {csv_path}. Using simulated data.")
+    simulated_data = [
+        {
+            "speed": random.uniform(0, 120),
+            "rpm": random.uniform(800, 3500),
+            "fuel_efficiency": random.uniform(5, 15),
+            "engine_temp": random.uniform(70, 95),
+            "throttle": random.uniform(0, 100),
+            "fault_code": "None" if random.random() > 0.05 else f"P{random.randint(0, 9)}{random.randint(0, 9)}{random.randint(0, 9)}{random.randint(0, 9)}",
+            "gear": random.randint(1, 6),
+            "fuel": random.uniform(10, 100),
+            "engine_load": random.uniform(20, 80)
+        } for _ in range(100)
+    ]
+    data_iterator = cycle(simulated_data)
 
-# Track trip data (simple simulation)
+# Trip data
 trip_start_time = datetime.now() - timedelta(minutes=random.randint(15, 120))
 trip_distance = random.uniform(5.0, 50.0)
 trip_avg_speed = random.uniform(40.0, 90.0)
@@ -38,7 +57,7 @@ trip_fuel_consumption = random.uniform(6.0, 10.0)
 fuel_tank_size = 50.0
 fuel_remaining = random.uniform(fuel_tank_size * 0.2, fuel_tank_size * 0.8)
 
-# Driving behavior data (simulated)
+# Driving behavior data
 acceleration_score = random.uniform(2.5, 4.5)
 braking_score = random.uniform(2.5, 4.5)
 current_efficiency = random.uniform(7.5, 10.5)
@@ -56,8 +75,19 @@ class OBDData(BaseModel):
     engine_temp: float
     throttle: float
     fault_code: str
-    gear: int
-    fuel: float = 0  # Add fuel property
+    
+    gear: Union[int, str]
+
+    @validator("gear", pre=True)
+    def convert_gear(cls, v):
+        if isinstance(v, str) and v.upper() in ["N", "R"]:
+            return 0  # Treat "N" or "R" as neutral/zero
+        try:
+            return int(v)
+        except:
+            return 0
+
+    fuel: float = 0
 
 class TripData(BaseModel):
     distance: float
@@ -120,48 +150,62 @@ def get_real_time_obd_data():
     Handles NaN, Inf, and invalid float values.
     """
     try:
-        data = next(data_iterator)  # Get the next row
+        data = next(data_iterator)
         
-        # Debug: Print the raw data row
-        print(f"Raw data row from CSV: {data}")
-
-        # Replace NaN or Infinity values with 0
         for key in data:
             if isinstance(data[key], float) and (math.isnan(data[key]) or math.isinf(data[key])):
-                data[key] = 0.0  # Set a safe default value
+                data[key] = 0.0
         
-        # Extract and convert fuel value, ensuring it's a valid float
         fuel_value = 0.0
         if 'fuel' in data:
             try:
                 fuel_value = float(data['fuel'])
-                print(f"Extracted fuel value: {fuel_value}")
             except (ValueError, TypeError):
-                print(f"Error converting fuel value: {data['fuel']}")
-                fuel_value = 0.0
+                try:
+                    fuel_str = str(data['fuel']).replace('%', '').replace(',', '.')
+                    fuel_value = float(fuel_str)
+                except:
+                    fuel_value = 0.0
 
-        # Convert gear to int if possible
         gear_value = 0
         if 'gear' in data:
             try:
                 gear_value = int(float(data['gear']))
             except (ValueError, TypeError):
                 try:
-                    # If gear is something like 'N' or 'R'
                     gear_value = data['gear']
                 except:
                     gear_value = 0
 
-        return {
+        engine_load = 0.0
+        if 'engine_load' in data:
+            try:
+                if isinstance(data['engine_load'], str):
+                    load_str = data['engine_load'].replace('%', '').replace(',', '.')
+                    engine_load = float(load_str)
+                else:
+                    engine_load = float(data['engine_load'])
+            except:
+                engine_load = 0.0
+
+        result = {
             "speed": data["speed"],
             "rpm": data["rpm"],
             "gear": gear_value,
-            "fuel_efficiency": data["fuel_efficiency"],
+            "fuel_efficiency": data.get("fuel_efficiency", 0.0),
             "engine_temp": data["engine_temp"],
             "throttle": data["throttle"],
             "fault_code": data["fault_code"],
-            "fuel": fuel_value  # Include the fuel value
+            "fuel": fuel_value,
+            "engine_load": engine_load
         }
+        
+        global recent_obd_data
+        recent_obd_data.append(result)
+        if len(recent_obd_data) > MAX_HISTORY_SIZE:
+            recent_obd_data = recent_obd_data[-MAX_HISTORY_SIZE:]
+            
+        return result
     except Exception as e:
         print(f"Error in get_real_time_obd_data: {str(e)}")
         return {"error": f"Failed to retrieve OBD data: {str(e)}"}
@@ -174,42 +218,63 @@ def get_efficiency_score(data: OBDData):
     if data.speed == 0:
         return {"efficiency_score": 0}
     
-    score = (data.fuel_efficiency / data.speed) * 100
-    return {"efficiency_score": round(min(score, 100), 2)}
+    processed_data = {
+        'rpm': data.rpm,
+        'speed': data.speed,
+        'throttle': data.throttle,
+        'engine_load': 50 
+    }
+    
+    predicted_efficiency = fuel_predictor.predict_efficiency(
+        processed_data['rpm'],
+        processed_data['speed'],
+        processed_data['throttle'],
+        processed_data['engine_load']
+    )
+    
+    score = min(100, max(0, (predicted_efficiency / 15) * 100))
+    
+    return {"efficiency_score": round(score, 2)}
 
 @app.get("/api/trip-info")
 def get_trip_info():
     """
     Provides information about the current trip.
-    This is a simulation - in a real implementation, this would
-    track actual trip data from the vehicle.
+    Now uses real OBD data for fuel values.
     """
     global trip_distance, trip_avg_speed, trip_start_time, trip_fuel_consumption
-    global prev_avg_speed, fuel_remaining
-    
-    # Simulate incremental updates to trip data
+    global prev_avg_speed
+
     trip_distance += random.uniform(0.01, 0.1)
     trip_avg_speed += random.uniform(-0.5, 0.5)
     trip_fuel_consumption += random.uniform(-0.05, 0.05)
-    fuel_remaining -= random.uniform(0.01, 0.05)
-    
-    # Calculate trip duration in minutes
+    trip_avg_speed = max(0, trip_avg_speed)
+    trip_fuel_consumption = max(1, trip_fuel_consumption)
+
+    if recent_obd_data:
+        latest_fuel = recent_obd_data[-1].get("fuel", 0.0)
+    else:
+        latest_fuel = 0.0
+
     now = datetime.now()
     duration_minutes = (now - trip_start_time).total_seconds() / 60
-    
-    # Calculate estimated range based on remaining fuel and consumption
-    estimated_range = (fuel_remaining / trip_fuel_consumption) * 100
-    
+
+    if trip_fuel_consumption > 0:
+        estimated_range = max(0, (latest_fuel / trip_fuel_consumption) * 100)
+    else:
+        estimated_range = 0.0
+
     return {
         "distance": trip_distance,
         "avgSpeed": trip_avg_speed,
         "duration": duration_minutes,
         "startTime": trip_start_time,
         "avgConsumption": trip_fuel_consumption,
-        "fuelRemaining": fuel_remaining,
+        "fuelRemaining": latest_fuel,
         "estimatedRange": estimated_range,
         "prevAvgSpeed": prev_avg_speed
     }
+
 
 @app.get("/api/driving-behavior")
 def get_driving_behavior():
@@ -221,7 +286,6 @@ def get_driving_behavior():
     global acceleration_score, braking_score, current_efficiency, week_efficiency
     global harsh_accel_current, harsh_accel_week, harsh_braking_current, harsh_braking_week
     
-    # Simulate slight changes to make it feel dynamic
     acceleration_score += random.uniform(-0.1, 0.1)
     acceleration_score = max(1.0, min(5.0, acceleration_score))
     
@@ -231,10 +295,9 @@ def get_driving_behavior():
     current_efficiency += random.uniform(-0.1, 0.1)
     current_efficiency = max(5.0, min(15.0, current_efficiency))
     
-    # Occasionally add harsh events
-    if random.random() < 0.02:  # 2% chance
+    if random.random() < 0.02:
         harsh_accel_current += 1
-    if random.random() < 0.01:  # 1% chance
+    if random.random() < 0.01:
         harsh_braking_current += 1
     
     return {
@@ -252,34 +315,27 @@ def get_driving_behavior():
 def get_predictive_model():
     """
     Provides predictive analysis for maintenance, efficiency, and costs.
-    This is a simulation - in a real implementation, this would connect
-    to a machine learning model trained on vehicle data.
+    Uses our actual predictive model for fuel efficiency calculations.
     """
-    global trip_fuel_consumption, acceleration_score, braking_score
+    global recent_obd_data, trip_fuel_consumption, acceleration_score, braking_score
     
-    # Calculate some values based on current data to make predictions "relevant"
-    current_efficiency = trip_fuel_consumption
-    
-    # Randomize next trip efficiency (within reasonable bounds)
-    next_trip = current_efficiency * (1 + (random.random() * 0.1 - 0.05))
-    monthly_avg = next_trip * (1 + (random.random() * 0.15 - 0.05))
-    
-    # Simulated driving tips based on scores
-    improvement_tip = ""
-    if acceleration_score < 3.5:
-        improvement_tip = "Try accelerating more gradually to improve fuel economy."
-    elif braking_score < 3.5:
-        improvement_tip = "Anticipate stops earlier to reduce harsh braking and improve efficiency."
+    if recent_obd_data:
+        latest_data = recent_obd_data[-1]
+        processed_data = process_obd_data(latest_data)
+        
+        driving_style = determine_driving_style(recent_obd_data)
+        
+        efficiency_predictions = fuel_predictor.predict_future_efficiency(processed_data, driving_style)
+        current_efficiency = efficiency_predictions['current']
     else:
-        improvement_tip = "Maintain a steady speed on highways to maximize fuel economy."
+        current_efficiency = trip_fuel_consumption
+        efficiency_predictions = {
+            'current': current_efficiency,
+            'nextTrip': current_efficiency * (1 + (random.random() * 0.1 - 0.05)),
+            'monthly': current_efficiency * (1 + (random.random() * 0.15 - 0.05)),
+            'improvement': "Maintain steady speeds and anticipate stops to maximize efficiency."
+        }
     
-    # Calculate simulated costs
-    monthly_km = 1200  # Assumed monthly distance
-    fuel_price = 1.50  # Assumed price per liter
-    fuel_consumption = monthly_km / current_efficiency
-    monthly_fuel_cost = fuel_consumption * fuel_price
-    
-    # Simulated maintenance schedule based on random value (would be ML-based in real app)
     maintenance_urgency = ["Low", "Medium", "High"]
     maintenance_items = [
         {
@@ -302,7 +358,6 @@ def get_predictive_model():
         }
     ]
     
-    # Simulated optimization suggestions
     optimizations = [
         {
             "category": "Driving",
@@ -324,13 +379,22 @@ def get_predictive_model():
         }
     ]
     
-    # Randomly shuffle maintenance urgency and details to make it dynamic
-    for item in maintenance_items:
-        item["urgency"] = random.choice(maintenance_urgency)
+    monthly_km = 1200  # Assumed monthly distance
+    fuel_price = 1.50  # Assumed price per liter
     
-    # Cost predictions
+    try:
+        if current_efficiency <= 0:
+            raise ValueError("Invalid efficiency, using default.")
+        fuel_consumption = monthly_km / current_efficiency
+    except Exception:
+        current_efficiency = 8.0  # fallback
+        fuel_consumption = monthly_km / current_efficiency
+
+    monthly_fuel_cost = fuel_consumption * fuel_price
+
+    
     # Monthly costs
-    monthly_maintenance = 0  # Assume no maintenance this month
+    monthly_maintenance = 0 
     if any(item["urgency"] == "High" for item in maintenance_items):
         monthly_maintenance = random.randint(50, 150)
     
@@ -345,10 +409,10 @@ def get_predictive_model():
     return {
         "maintenance": maintenance_items,
         "efficiency": {
-            "current": current_efficiency,
-            "nextTrip": next_trip,
-            "monthly": monthly_avg,
-            "improvement": improvement_tip
+            "current": efficiency_predictions['current'],
+            "nextTrip": efficiency_predictions['nextTrip'],
+            "monthly": efficiency_predictions['monthly'],
+            "improvement": efficiency_predictions['improvement']
         },
         "costs": {
             "month": {
@@ -369,3 +433,7 @@ def get_predictive_model():
         },
         "optimizations": optimizations
     }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

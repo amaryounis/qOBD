@@ -53,10 +53,7 @@
         </g>
       </svg>
       
-      <!-- Status badge -->
-      <div class="absolute bottom-0 mb-2">
-        <span class="badge" :class="statusBadgeClass">{{ status }}</span>
-      </div>
+      
     </div>
   </div>
 </template>
