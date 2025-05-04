@@ -45,7 +45,7 @@ def process_obd_data(obd_data):
 
 def determine_driving_style(data_history):
     """
-    Analyze recent driving history to determine driving style
+    Analyse recent driving history to determine driving style
     
     Args:
         data_history: List of recent OBD data points
@@ -67,6 +67,13 @@ def determine_driving_style(data_history):
         return 'normal'
 
 class FuelEfficiencyPredictor:
+    """
+    This module calculates fuel efficiency based on the stoichiometric relationship between
+    air flow and fuel consumption. For gasoline engines, the ideal air-to-fuel ratio is 14.7:1
+    by mass, meaning 14.7g of air is required to completely burn 1g of fuel. By measuring
+    the Mass Air Flow (MAF) and vehicle speed, we can derive fuel efficiency in km/L.
+    """
+    
     def __init__(self, model_path=None):
         """
         Initialize the predictor by loading a trained model
@@ -202,6 +209,7 @@ class FuelEfficiencyPredictor:
     def _prepare_training_data(self, df):
         """
         Prepare training data by creating the derived fuel efficiency target
+        using stoichiometric principles
         
         Args:
             df: Preprocessed DataFrame
@@ -209,17 +217,23 @@ class FuelEfficiencyPredictor:
         Returns:
             (X, y) tuple for training
         """
-        # Calculate fuel efficiency based on MAF and speed
-        # Formula: Efficiency (km/L) = Speed (km/h) / (MAF (g/s) * 0.3355)
-        # 0.3355 is a conversion factor for gasoline: 1 g/s of air ≈ 0.3355 L/h of fuel
-        
         # Create a copy to avoid warnings
         df_calc = df.copy()
         
-        # Calculate fuel efficiency
-        # Avoid division by zero or negative values
+        # Calculate fuel efficiency based on MAF and speed using stoichiometric principles
+        # For gasoline engines, the stoichiometric air-to-fuel ratio is 14.7:1
+        # Fuel density is approximately 0.75 kg/L
+        
         mask = (df_calc['SPEED'] > 0) & (df_calc['MAF'] > 0)
-        df_calc.loc[mask, 'FUEL_EFFICIENCY'] = df_calc.loc[mask, 'SPEED'] / (df_calc.loc[mask, 'MAF'] * 0.3355)
+        
+        # First calculate fuel mass flow rate (g/s)
+        df_calc.loc[mask, 'FUEL_MASS_FLOW'] = df_calc.loc[mask, 'MAF'] / 14.7
+        
+        # Convert to volume flow (L/h) using fuel density
+        df_calc.loc[mask, 'FUEL_VOLUME_FLOW'] = (df_calc.loc[mask, 'FUEL_MASS_FLOW'] / 0.75) * 3600
+        
+        # Calculate efficiency (km/L)
+        df_calc.loc[mask, 'FUEL_EFFICIENCY'] = df_calc.loc[mask, 'SPEED'] / df_calc.loc[mask, 'FUEL_VOLUME_FLOW']
         
         # Remove extreme values (likely calculation errors)
         df_calc = df_calc[(df_calc['FUEL_EFFICIENCY'] > 0) & (df_calc['FUEL_EFFICIENCY'] <= 30)]
@@ -247,18 +261,20 @@ class FuelEfficiencyPredictor:
             Predicted fuel efficiency in km/L
         """
         if self.model is None:
-            # If no model is loaded, use a fallback calculation
-            # This is just to ensure compatibility with the old code
+            # If no model is loaded, use a calculation based on stoichiometric principles
             if speed < 1:
                 return 0
             
-            # Simple estimate based on typical relationship
-            base_efficiency = 15
-            rpm_factor = 0.001
-            throttle_factor = 0.05
+            # Estimate MAF based on typical parameters
+            # This is a simplified approach when no model is available
+            estimated_maf = (rpm * engine_load / 1000) * 0.1
             
-            efficiency = base_efficiency - (rpm * rpm_factor) - (throttle * throttle_factor)
+            # Use stoichiometric ratio to estimate fuel efficiency
+            fuel_mass_flow = estimated_maf / 14.7
+            fuel_volume_flow = (fuel_mass_flow / 0.75) * 3600
+            efficiency = speed / fuel_volume_flow
             
+            # Constrain to reasonable values
             if efficiency < 0:
                 return 0
             if efficiency > 30:
