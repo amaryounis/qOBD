@@ -70,8 +70,7 @@ class FuelEfficiencyPredictor:
     """
     This module calculates fuel efficiency based on the stoichiometric relationship between
     air flow and fuel consumption. For gasoline engines, the ideal air-to-fuel ratio is 14.7:1
-    by mass, meaning 14.7g of air is required to completely burn 1g of fuel. By measuring
-    the Mass Air Flow (MAF) and vehicle speed, we can derive fuel efficiency in km/L.
+    by mass, meaning 14.7g of air is required to completely burn 1g of fuel.
     """
     
     def __init__(self, model_path=None):
@@ -168,8 +167,22 @@ class FuelEfficiencyPredictor:
         """
         try:
             import pandas as pd
-            df = pd.read_csv(data_path)
+            df = pd.read_csv(data_path, low_memory=False)
             print(f"Loaded data from {data_path} with {len(df)} rows")
+            
+            # Check for required columns and map alternative names
+            column_mapping = {
+                'rpm': 'ENGINE_RPM',
+                'speed': 'SPEED',
+                'throttle': 'THROTTLE_POS',
+                'engine_load': 'ENGINE_LOAD',
+                'maf': 'MAF'
+            }
+            
+            # Rename columns if needed
+            for old_col, new_col in column_mapping.items():
+                if old_col in df.columns and new_col not in df.columns:
+                    df[new_col] = df[old_col]
             
             # Check for required columns
             required_columns = ['ENGINE_RPM', 'SPEED', 'THROTTLE_POS', 'ENGINE_LOAD', 'MAF']
@@ -177,7 +190,13 @@ class FuelEfficiencyPredictor:
             
             if missing_columns:
                 print(f"Error: CSV is missing these required columns: {missing_columns}")
-                return None
+                # Try to detect and use alternative column names
+                if 'MAF' in missing_columns and 'AIR_FLOW' in df.columns:
+                    df['MAF'] = df['AIR_FLOW']
+                    missing_columns.remove('MAF')
+                
+                if missing_columns:  # If still missing columns
+                    return None
             
             # Handle string values in required fields
             for col in required_columns:
@@ -186,6 +205,11 @@ class FuelEfficiencyPredictor:
                     df[col] = df[col].str.replace('%', '').str.replace(',', '.')
                     # Convert to float
                     df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # Print column statistics for inspection
+            for col in required_columns:
+                if col in df.columns:
+                    print(f"{col} range: {df[col].min()} to {df[col].max()}, mean: {df[col].mean()}")
             
             # Remove rows with missing values
             original_len = len(df)
@@ -209,7 +233,6 @@ class FuelEfficiencyPredictor:
     def _prepare_training_data(self, df):
         """
         Prepare training data by creating the derived fuel efficiency target
-        using stoichiometric principles
         
         Args:
             df: Preprocessed DataFrame
@@ -220,22 +243,33 @@ class FuelEfficiencyPredictor:
         # Create a copy to avoid warnings
         df_calc = df.copy()
         
-        # Calculate fuel efficiency based on MAF and speed using stoichiometric principles
-        # For gasoline engines, the stoichiometric air-to-fuel ratio is 14.7:1
-        # Fuel density is approximately 0.75 kg/L
-        
+        # Only work with data where vehicle is moving
         mask = (df_calc['SPEED'] > 0) & (df_calc['MAF'] > 0)
         
-        # First calculate fuel mass flow rate (g/s)
+        # Check if MAF is likely in g/h rather than g/s
+        avg_maf = df_calc.loc[mask, 'MAF'].mean()
+        if avg_maf > 100:  # Likely in g/h
+            print(f"MAF average ({avg_maf}) suggests values are in g/h, converting to g/s")
+            df_calc.loc[mask, 'MAF'] = df_calc.loc[mask, 'MAF'] / 3600
+        
+        # Calculate fuel mass flow rate (g/s) using stoichiometric ratio
         df_calc.loc[mask, 'FUEL_MASS_FLOW'] = df_calc.loc[mask, 'MAF'] / 14.7
         
-        # Convert to volume flow (L/h) using fuel density
-        df_calc.loc[mask, 'FUEL_VOLUME_FLOW'] = (df_calc.loc[mask, 'FUEL_MASS_FLOW'] / 0.75) * 3600
+        # Convert to fuel volume flow (L/h)
+        # Density of gasoline ~0.75 kg/L
+        df_calc.loc[mask, 'FUEL_VOLUME_FLOW'] = (df_calc.loc[mask, 'FUEL_MASS_FLOW'] / 0.75) * 3.6  # g/s to L/h
         
         # Calculate efficiency (km/L)
         df_calc.loc[mask, 'FUEL_EFFICIENCY'] = df_calc.loc[mask, 'SPEED'] / df_calc.loc[mask, 'FUEL_VOLUME_FLOW']
         
-        # Remove extreme values (likely calculation errors)
+        # Check for unrealistic values and apply reasonable constraints
+        efficiency_min = df_calc.loc[mask, 'FUEL_EFFICIENCY'].min()
+        efficiency_max = df_calc.loc[mask, 'FUEL_EFFICIENCY'].max()
+        efficiency_mean = df_calc.loc[mask, 'FUEL_EFFICIENCY'].mean()
+        
+        print(f"Raw efficiency stats - min: {efficiency_min:.2f}, max: {efficiency_max:.2f}, mean: {efficiency_mean:.2f} km/L")
+        
+        # Apply reasonable limits (5-30 km/L for most vehicles)
         df_calc = df_calc[(df_calc['FUEL_EFFICIENCY'] > 0) & (df_calc['FUEL_EFFICIENCY'] <= 30)]
         
         # Get features and target
@@ -243,7 +277,7 @@ class FuelEfficiencyPredictor:
         y = df_calc['FUEL_EFFICIENCY'].values
         
         print(f"Prepared {len(X)} training examples")
-        print(f"Average calculated fuel efficiency: {y.mean():.2f} km/L")
+        print(f"Filtered efficiency stats - min: {min(y):.2f}, max: {max(y):.2f}, mean: {np.mean(y):.2f} km/L")
         
         return X, y
     
@@ -261,49 +295,59 @@ class FuelEfficiencyPredictor:
             Predicted fuel efficiency in km/L
         """
         if self.model is None:
-            # If no model is loaded, use a calculation based on stoichiometric principles
+            # If no model is loaded, use a physics-based estimation
             if speed < 1:
                 return 0
             
-            # Estimate MAF based on typical parameters
-            # This is a simplified approach when no model is available
-            estimated_maf = (rpm * engine_load / 100) * 0.5
+            # Baseline efficiency for typical vehicle
+            baseline_efficiency = 12.0  # km/L
             
-            # Use stoichiometric ratio to estimate fuel efficiency
-            fuel_mass_flow = estimated_maf / 14.7
-            fuel_volume_flow = (fuel_mass_flow / 0.75) * 3.6
-        
-            if fuel_volume_flow > 0:
-                efficiency = 100 / fuel_volume_flow #km/L
+            # RPM factor - optimal around 1800-2200 RPM
+            if rpm < 1000:
+                rpm_factor = 0.8  # Low RPM is inefficient
+            elif rpm <= 2200:
+                rpm_factor = 1.0  # Optimal range
             else:
-                efficiency = 0
+                rpm_factor = max(0.6, 1.0 - ((rpm - 2200) / 4000) * 0.4)  # Higher RPM reduces efficiency
             
-            # Constrain to reasonable values
-            if efficiency < 0:
-                return 0
-            if efficiency > 30:
-                return 30
-                
-            return efficiency
+            # Throttle factor - partial throttle most efficient
+            if throttle < 15:
+                throttle_factor = 0.85  # Very light throttle less efficient
+            elif throttle <= 40:
+                throttle_factor = 1.0  # Optimal range
+            else:
+                throttle_factor = max(0.7, 1.0 - ((throttle - 40) / 60) * 0.3)  # Heavy throttle less efficient
+            
+            # Speed factor - optimal around 70-90 km/h
+            if speed < 30:
+                speed_factor = 0.75  # City traffic less efficient
+            elif speed <= 90:
+                speed_factor = 1.0  # Highway cruising optimal
+            else:
+                speed_factor = max(0.8, 1.0 - ((speed - 90) / 60) * 0.2)  # Very high speeds less efficient
+            
+            # Load factor - higher load reduces efficiency
+            load_factor = max(0.7, 1.0 - (engine_load / 100) * 0.3)
+            
+            # Calculate final efficiency
+            efficiency = baseline_efficiency * rpm_factor * throttle_factor * speed_factor * load_factor
+            
+            # Ensure realistic bounds
+            return max(5.0, min(30.0, efficiency))
         
-        # Handle special case: vehicle not moving
+        # Handle vehicle not moving
         if speed < 1:
             return 0
         
-        # Prepare input
+        # Use trained model for prediction
         X = np.array([[rpm, speed, throttle, engine_load]])
         X_scaled = self.scaler.transform(X)
         
         # Predict
         predicted = self.model.predict(X_scaled)[0]
         
-        # Constrain to reasonable values
-        if predicted < 0:
-            return 0
-        if predicted > 30:
-            return 30
-        
-        return predicted
+        # Ensure realistic bounds
+        return max(5.0, min(30.0, predicted))
     
     def predict_future_efficiency(self, current_data, driving_style):
         """
@@ -323,6 +367,10 @@ class FuelEfficiencyPredictor:
             current_data['engine_load']
         )
         
+        # Use reasonable default if stopped or too low
+        if current_efficiency < 5.0 and current_data['speed'] > 0:
+            current_efficiency = 10.0
+        
         # Adjust based on driving style
         if driving_style == 'eco':
             next_trip_factor = 1.05
@@ -338,10 +386,14 @@ class FuelEfficiencyPredictor:
         next_trip_factor *= random.uniform(0.97, 1.03)
         monthly_factor *= random.uniform(0.95, 1.05)
         
+        # Apply the factors and ensure values are within realistic bounds
+        next_trip = max(5.0, min(30.0, current_efficiency * next_trip_factor))
+        monthly = max(5.0, min(30.0, current_efficiency * monthly_factor))
+        
         return {
             'current': current_efficiency,
-            'nextTrip': current_efficiency * next_trip_factor,
-            'monthly': current_efficiency * monthly_factor,
+            'nextTrip': next_trip,
+            'monthly': monthly,
             'improvement': self._get_improvement_tip(current_data, driving_style)
         }
     
