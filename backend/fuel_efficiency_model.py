@@ -267,12 +267,16 @@ class FuelEfficiencyPredictor:
             
             # Estimate MAF based on typical parameters
             # This is a simplified approach when no model is available
-            estimated_maf = (rpm * engine_load / 1000) * 0.1
+            estimated_maf = (rpm * engine_load / 100) * 0.5
             
             # Use stoichiometric ratio to estimate fuel efficiency
             fuel_mass_flow = estimated_maf / 14.7
-            fuel_volume_flow = (fuel_mass_flow / 0.75) * 3600
-            efficiency = speed / fuel_volume_flow
+            fuel_volume_flow = (fuel_mass_flow / 0.75) * 3.6
+        
+            if fuel_volume_flow > 0:
+                efficiency = 100 / fuel_volume_flow #km/L
+            else:
+                efficiency = 0
             
             # Constrain to reasonable values
             if efficiency < 0:
