@@ -1,0 +1,118 @@
+function testFrontendRendering() {
+    const results = {
+        screenInfo: {
+            width: window.innerWidth,
+            height: window.innerHeight,
+            devicePixelRatio: window.devicePixelRatio
+        },
+        componentsPresent: {},
+        themeToggleTest: {},
+        storagePersistence: {}
+    };
+    
+    // Check if main components are present based on your actual DOM structure
+    const componentSelectors = {
+        'Dashboard': '.min-h-screen.bg-base-200',
+        'RPM Gauge': '.rpm-gauge-container',
+        'Speed Gauge': '.speed-gauge-container',
+        'Trip Info': '.card-title',
+        'Settings Modal': '.modal'
+        // Efficiency Chart test removed as requested
+    };
+    
+    for (const [name, selector] of Object.entries(componentSelectors)) {
+        results.componentsPresent[name] = document.querySelector(selector) !== null;
+    }
+    
+    // First, try to open the settings modal
+    const settingsButtons = Array.from(document.querySelectorAll('.dropdown-end .menu a, .btn'));
+    const settingsButton = settingsButtons.find(el => el.textContent.includes('Settings'));
+    
+    if (settingsButton) {
+        // Click to open settings
+        settingsButton.click();
+        // Check again for modal
+        setTimeout(() => {
+            results.componentsPresent['Settings Modal'] = document.querySelector('.modal-box') !== null;
+        }, 100);
+    }
+    
+    // For theme toggle test
+    window.testThemeToggle = function() {
+        // Get current theme
+        const initialTheme = document.documentElement.getAttribute('data-theme');
+        
+        // Find the theme toggle button
+        const menuItems = Array.from(document.querySelectorAll('.dropdown-end .menu a, .btn'));
+        const themeToggleButton = menuItems.find(el => el.textContent.includes('Toggle Theme'));
+        
+        if (themeToggleButton) {
+            themeToggleButton.click();
+            
+            // Get new theme
+            const newTheme = document.documentElement.getAttribute('data-theme');
+            
+            // Toggle back
+            themeToggleButton.click();
+            
+            results.themeToggleTest = {
+                initialTheme: initialTheme,
+                newTheme: newTheme,
+                success: initialTheme !== newTheme
+            };
+        } else {
+            // Try accessing the Vue component directly
+            if (window.app && window.app.toggleTheme) {
+                const initialTheme = document.documentElement.getAttribute('data-theme');
+                window.app.toggleTheme();
+                const newTheme = document.documentElement.getAttribute('data-theme');
+                window.app.toggleTheme(); // Toggle back
+                
+                results.themeToggleTest = {
+                    initialTheme: initialTheme,
+                    newTheme: newTheme,
+                    success: initialTheme !== newTheme
+                };
+            } else {
+                results.themeToggleTest = {
+                    error: "Theme toggle functionality not found"
+                };
+            }
+        }
+    };
+    
+    // Execute theme toggle test
+    window.testThemeToggle();
+    
+    // Clean up
+    delete window.testThemeToggle;
+    
+    // Test localStorage persistence
+    const testSettings = {
+        showRPMGauge: true,
+        showSpeedChart: false,
+        componentLayout: { statsCards: { slide1: true } }
+    };
+    
+    localStorage.setItem('testSettings', JSON.stringify(testSettings));
+    const retrievedSettings = JSON.parse(localStorage.getItem('testSettings'));
+    results.storagePersistence = {
+        settingsSaved: localStorage.getItem('testSettings') !== null,
+        settingsMatch: JSON.stringify(testSettings) === JSON.stringify(retrievedSettings)
+    };
+    
+    // Clean up test
+    localStorage.removeItem('testSettings');
+    
+    // Close settings modal if it's open
+    const closeButton = document.querySelector('.modal-action .btn-ghost');
+    if (closeButton) {
+        closeButton.click();
+    }
+    
+    console.table(results.componentsPresent);
+    console.log('Theme Toggle Test:', results.themeToggleTest);
+    console.log('Storage Persistence Test:', results.storagePersistence);
+    
+    return results;
+}
